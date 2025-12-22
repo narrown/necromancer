@@ -1,0 +1,725 @@
+#pragma once
+
+#include "../../Utils/Config/Config.h"
+
+namespace CFG
+{
+#pragma region Aimbot
+
+	CFGVAR(Aimbot_Active, true);
+	CFGVAR(Aimbot_AutoShoot, true);
+	CFGVAR(Aimbot_Key, 0);
+	CFGVAR(Aimbot_Target_Players, true);
+	CFGVAR(Aimbot_Target_Buildings, true);
+	CFGVAR(Aimbot_Ignore_Friends, true);
+	CFGVAR(Aimbot_Ignore_Invisible, false);
+	CFGVAR(Aimbot_Ignore_Invulnerable, true);
+	CFGVAR(Aimbot_Ignore_Taunting, false);
+
+	CFGVAR(Aimbot_Hitscan_Active, false);
+	CFGVAR(Aimbot_Hitscan_Target_LagRecords, true);
+	CFGVAR(Aimbot_Hitscan_Target_Stickies, true);
+	CFGVAR(Aimbot_Hitscan_Aim_Type, 1); //0 Normal 1 Silent 2 Smooth
+	CFGVAR(Aimbot_Hitscan_Sort, 0); //0 FOV 1 Distance
+	CFGVAR(Aimbot_Hitscan_Hitbox, 2); //0 Head 1 Body 2 Auto 3 Switch
+	CFGVAR(Aimbot_Hitscan_Switch_Key, 0); // Key to toggle head/body for sniper/ambassador
+	CFGVAR(Aimbot_Hitscan_Switch_State, false); // false = Head, true = Body
+	CFGVAR(Aimbot_Hitscan_Switch_Indicator_X, 960);
+	CFGVAR(Aimbot_Hitscan_Switch_Indicator_Y, 540);
+	CFGVAR(Aimbot_Hitscan_FOV, 15.0f);
+	CFGVAR(Aimbot_Hitscan_Smoothing, 3.0f);
+	CFGVAR(Aimbot_Hitscan_Fake_Latency, 0.0f); // Fake latency in milliseconds (0-600ms)
+	CFGVAR(Aimbot_Hitscan_Pellet_Visibility_Scale, 0.50f); // 0.30 - 0.80 recommended
+	CFGVAR(Aimbot_Hitscan_Scan_Head, true);
+	CFGVAR(Aimbot_Hitscan_Scan_Body, true);
+	CFGVAR(Aimbot_Hitscan_Scan_Arms, false);
+	CFGVAR(Aimbot_Hitscan_Scan_Legs, false);
+	CFGVAR(Aimbot_Hitscan_Scan_Buildings, true);
+	CFGVAR(Aimbot_Hitscan_Advanced_Smooth_AutoShoot, true);
+	CFGVAR(Aimbot_Hitscan_Auto_Scope, false);
+	CFGVAR(Aimbot_Hitscan_Wait_For_Headshot, true);
+	CFGVAR(Aimbot_Hitscan_Wait_For_Charge, false);
+	CFGVAR(Aimbot_Hitscan_Minigun_TapFire, false);
+	CFGVAR(Aimbot_Hitscan_Smart_Shotgun, false); // Smart shotgun damage prediction - waits for pellet visibility
+	CFGVAR(Aimbot_Hitscan_FakeLagFix, true); // Detect fakelag and wait for optimal shot timing
+	CFGVAR(Aimbot_Hitscan_FakeLagFix_Indicator, false); // Show fakelag detection indicator
+
+	CFGVAR(Aimbot_Projectile_Active, true);
+	CFGVAR(Aimbot_Projectile_Aim_Type, 1); //0 Normal 1 Silent
+	CFGVAR(Aimbot_Projectile_Sort, 0); //0 FOV 1 Distance
+	CFGVAR(Aimbot_Projectile_Aim_Position, 3); //0 Feet 1 Body 2 Head 3 Auto
+	CFGVAR(Aimbot_Projectile_FOV, 30.0f);
+	CFGVAR(Aimbot_Projectile_Max_Simulation_Time, 4.0f); // Max simulation time in seconds
+	CFGVAR(Aimbot_Projectile_Max_Targets, 2); // Max targets to simulate (1-5)
+	CFGVAR(Aimbot_Projectile_Auto_Charge, true); // Auto charge sticky/bow for aimbot (hidden, always on)
+	CFGVAR(Aimbot_Projectile_Charge_Ticks, 1); // Minimum ticks to charge before firing (hidden, default 1)
+	// Prediction_Method removed - always uses Movement Simulation now
+	CFGVAR(Aimbot_Projectile_Strafe_Prediction_Ground, true);
+	CFGVAR(Aimbot_Projectile_Strafe_Prediction_Air, true);
+	CFGVAR(Aimbot_Projectile_Aim_Prediction_Method, 1); // 0 = Simple forward, 1 = Calculate from velocity
+	CFGVAR(Aimbot_Projectile_Latency_Compensation, true); // Account for network latency in prediction
+	
+	// Strafe prediction tuning (Amalgam-style)
+	CFGVAR(Aimbot_Projectile_Ground_Samples, 12);
+	CFGVAR(Aimbot_Projectile_Air_Samples, 16);
+	CFGVAR(Aimbot_Projectile_Ground_Straight_Fuzzy, 1000.f);
+	CFGVAR(Aimbot_Projectile_Air_Straight_Fuzzy, 500.f);
+	CFGVAR(Aimbot_Projectile_Ground_Max_Changes, 1);
+	CFGVAR(Aimbot_Projectile_Air_Max_Changes, 0);
+	CFGVAR(Aimbot_Projectile_Ground_Max_Change_Time, 8);
+	CFGVAR(Aimbot_Projectile_Air_Max_Change_Time, 4);
+	
+	// Distance-based minimum samples (Amalgam-style)
+	CFGVAR(Aimbot_Projectile_Ground_Low_Min_Distance, 500.f);
+	CFGVAR(Aimbot_Projectile_Ground_Low_Min_Samples, 4.f);
+	CFGVAR(Aimbot_Projectile_Ground_High_Min_Distance, 2000.f);
+	CFGVAR(Aimbot_Projectile_Ground_High_Min_Samples, 12.f);
+	CFGVAR(Aimbot_Projectile_Air_Low_Min_Distance, 500.f);
+	CFGVAR(Aimbot_Projectile_Air_Low_Min_Samples, 4.f);
+	CFGVAR(Aimbot_Projectile_Air_High_Min_Distance, 2000.f);
+	CFGVAR(Aimbot_Projectile_Air_High_Min_Samples, 12.f);
+	
+	// Delta prediction (Amalgam-style)
+	CFGVAR(Aimbot_Projectile_Delta_Count, 16);
+	CFGVAR(Aimbot_Projectile_Delta_Mode, 0); // 0 = Average, 1 = Max
+	
+	// Friction flags (Amalgam-style) - bitfield: 1 = CalculateIncrease, 2 = RunReduce
+	CFGVAR(Aimbot_Projectile_Friction_Flags, 3);
+
+	// Neckbreaker - iterate roll angles to bypass obstructions
+	CFGVAR(Aimbot_Projectile_Neckbreaker, false);
+	CFGVAR(Aimbot_Projectile_NeckbreakerStep, 90);
+
+	// Amalgam Projectile Aimbot Settings
+	CFGVAR(Aimbot_Amalgam_Projectile_Active, false); // Enable Amalgam projectile aimbot
+	CFGVAR(Aimbot_Amalgam_Projectile_Splash, 1); // 0=Off, 1=Include, 2=Prefer, 3=Only (default Include)
+	// Hitbox options (individual bools for multiselect)
+	CFGVAR(Aimbot_Amalgam_Projectile_Hitbox_Auto, true);
+	CFGVAR(Aimbot_Amalgam_Projectile_Hitbox_Head, true);
+	CFGVAR(Aimbot_Amalgam_Projectile_Hitbox_Body, true);
+	CFGVAR(Aimbot_Amalgam_Projectile_Hitbox_Feet, true);
+	CFGVAR(Aimbot_Amalgam_Projectile_Hitbox_BodyaimLethal, false);
+	CFGVAR(Aimbot_Amalgam_Projectile_Hitbox_PrioritizeFeet, true); // Prioritize feet for grounded targets
+	// Modifier options
+	CFGVAR(Aimbot_Amalgam_Projectile_Mod_PrimeTime, true); // Use prime time for projectile timing
+	CFGVAR(Aimbot_Amalgam_Projectile_Mod_ChargeWeapon, true); // Auto-charge sticky/huntsman while aiming
+	CFGVAR(Aimbot_Amalgam_Projectile_HitChance, 0); // 0 - 100% (hidden, always 0)
+	CFGVAR(Aimbot_Amalgam_Projectile_SplashRadius, 100); // 0 - 100% (hidden, always 100)
+	CFGVAR(Aimbot_Amalgam_Projectile_RocketSplashMode, 0); // 0=Regular, 1=SpecialLight, 2=SpecialHeavy
+	CFGVAR(Aimbot_Amalgam_Projectile_SplashPoints, 75); // 50 - 400
+	
+	// Midpoint Aim - aims at the midpoint of target's predicted path for better hit chance
+	CFGVAR(Aimbot_Projectile_Midpoint_Aim, false); // Enable midpoint aim
+	CFGVAR(Aimbot_Projectile_Midpoint_Max_Distance, 9.5f); // Max path distance in feet (1 foot = 16 units)
+
+	CFGVAR(Aimbot_Melee_Active, false);
+	CFGVAR(Aimbot_Melee_Always_Active, false);
+	CFGVAR(Aimbot_Melee_Target_LagRecords, true);
+	CFGVAR(Aimbot_Melee_Aim_Type, 1); //0 Normal 1 Silent 2 Smooth
+	CFGVAR(Aimbot_Melee_Sort, 0); //0 FOV 1 Distance
+	CFGVAR(Aimbot_Melee_FOV, 180.0f);
+	CFGVAR(Aimbot_Melee_Smoothing, 20.0f);
+	CFGVAR(Aimbot_Melee_Predict_Swing, true);
+	CFGVAR(Aimbot_Melee_Walk_To_Target, false);
+	CFGVAR(Aimbot_Melee_Whip_Teammates, true);
+	CFGVAR(Aimbot_Melee_Crouch_Airborne, false);
+	CFGVAR(Aimbot_Melee_Visualize_Prediction, false);
+	CFGVAR(Aimbot_Melee_Auto_Repair, true); // Auto target friendly buildings that need repair/upgrade/ammo
+
+	// Wrangler Aimbot - uses hitscan settings for aim type, FOV, smoothing
+	// Uses projectile splash settings for splash prediction
+
+#pragma endregion
+
+#pragma region Triggerbot
+
+	CFGVAR(Triggerbot_Active, true);
+	CFGVAR(Triggerbot_Key, 0);
+
+	CFGVAR(Triggerbot_AutoBackstab_Active, true);
+	CFGVAR(Triggerbot_AutoBackstab_Always_On, true);
+	CFGVAR(Triggerbot_AutoBackstab_Knife_If_Lethal, true);
+	CFGVAR(Triggerbot_AutoBacktab_Mode, 1); //0 Legit 1 Rage
+	CFGVAR(Triggerbot_AutoBacktab_Aim_Mode, 1); //0 Normal 1 Silent
+	CFGVAR(Triggerbot_AutoBackstab_Ignore_Friends, false);
+	CFGVAR(Triggerbot_AutoBackstab_Ignore_Invisible, false);
+	CFGVAR(Triggerbot_AutoBackstab_Ignore_Invulnerable, true);
+
+	CFGVAR(Triggerbot_AutoDetonate_Active, true);
+	CFGVAR(Triggerbot_AutoDetonate_Always_On, true);
+	CFGVAR(Triggerbot_AutoDetonate_Timer_Enabled, false);
+	CFGVAR(Triggerbot_AutoDetonate_Timer_Value, 0.1f);
+	CFGVAR(Triggerbot_AutoDetonate_DangerZone_Enabled, false);
+	CFGVAR(Triggerbot_AutoDetonate_Target_Players, true);
+	CFGVAR(Triggerbot_AutoDetonate_Target_Buildings, true);
+	CFGVAR(Triggerbot_AutoDetonate_Ignore_Friends, false);
+	CFGVAR(Triggerbot_AutoDetonate_Ignore_Invisible, true);
+	CFGVAR(Triggerbot_AutoDetonate_Ignore_Invulnerable, true);
+
+	CFGVAR(Triggerbot_AutoAirblast_Active, true);
+	CFGVAR(Triggerbot_AutoAirblast_Aim_Assist, true);
+	CFGVAR(Triggerbot_AutoAirblast_Mode, 1); //0 Legit 1 Rage
+	CFGVAR(Triggerbot_AutoAirblast_Aim_Mode, 1); //0 Normal 1 Silent
+	CFGVAR(Triggerbot_AutoAirblast_Aimbot_Support, true); // Use projectile aimbot to aim reflected rockets at enemies
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_Rocket, false);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_SentryRocket, false);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_Jar, false);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_JarGas, true);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_JarMilk, true);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_Arrow, true);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_Flare, true);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_Cleaver, false);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_HealingBolt, false);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_PipebombProjectile, false);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_BallOfFire, true);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_EnergyRing, false);
+	CFGVAR(Triggerbot_AutoAirblast_Ignore_EnergyBall, false);
+
+	CFGVAR(Triggerbot_AutoSapper_Active, true);
+	CFGVAR(Triggerbot_AutoSapper_Always_On, true);
+	CFGVAR(Triggerbot_AutoSapper_Mode, 1); // 0 Legit 1 Rage
+	CFGVAR(Triggerbot_AutoSapper_Aim_Mode, 1); // 0 Normal 1 Silent
+	CFGVAR(Triggerbot_AutoSapper_ESP, true); // Draw sapper range circles
+
+#pragma endregion
+
+#pragma region AutoVaccinator
+
+	CFGVAR(Triggerbot_AutoVaccinator_Active, true);
+	CFGVAR(Triggerbot_AutoVaccinator_Always_On, true);
+	CFGVAR(Triggerbot_AutoVaccinator_NoPop, false); // When enabled with Always On, only cycles resistance without popping
+	CFGVAR(Triggerbot_AutoVaccinator_Pop, 0); //0 everyone 1 friends only
+
+#pragma endregion
+
+#pragma region AutoUber
+
+	CFGVAR(AutoUber_Active, true);
+	CFGVAR(AutoUber_Always_On, true);
+	CFGVAR(AutoUber_CritProjectile_Check, true);
+	CFGVAR(AutoUber_SniperSightline_Check, true);
+	CFGVAR(AutoUber_AutoHeal_Active, false);
+	CFGVAR(AutoUber_AutoHeal_Prioritize_Friends, true);
+
+#pragma endregion
+
+#pragma region ESP
+
+	CFGVAR(ESP_Active, true);
+	CFGVAR(ESP_Tracer_From, 1); //0 Top 1 Center 2 Bottom
+	CFGVAR(ESP_Tracer_To, 2); //0 Top 1 Center 2 Bottom
+	CFGVAR(ESP_Text_Color, 0); //0 Default 1 White
+
+	CFGVAR(ESP_Players_Active, true);
+	CFGVAR(ESP_Players_Alpha, 0.7f);
+	CFGVAR(ESP_Players_Bones_Color, 1); //0 Default 1 White
+	CFGVAR(ESP_Players_Arrows_Radius, 100.0f);
+	CFGVAR(ESP_Players_Arrows_Max_Distance, 500.0f);
+	CFGVAR(ESP_Players_Ignore_Local, false);
+	CFGVAR(ESP_Players_Ignore_Friends, false);
+	CFGVAR(ESP_Players_Ignore_Enemies, false);
+	CFGVAR(ESP_Players_Ignore_Teammates, true);
+	CFGVAR(ESP_Players_Ignore_Invisible, false);
+	CFGVAR(ESP_Players_Show_Teammate_Medics, true);
+	CFGVAR(ESP_Players_Name, false);
+	CFGVAR(ESP_Players_Class, false);
+	CFGVAR(ESP_Players_Class_Icon, false);
+	CFGVAR(ESP_Players_Health, false);
+	CFGVAR(ESP_Players_HealthBar, true);
+	CFGVAR(ESP_Players_Uber, false);
+	CFGVAR(ESP_Players_UberBar, true);
+	CFGVAR(ESP_Players_Box, false);
+	CFGVAR(ESP_Players_Tracer, false);
+	CFGVAR(ESP_Players_Bones, false);
+	CFGVAR(ESP_Players_Arrows, true);
+	CFGVAR(ESP_Players_Conds, true);
+	CFGVAR(ESP_Players_Sniper_Lines, true);
+
+	CFGVAR(ESP_Buildings_Active, true);
+	CFGVAR(ESP_Buildings_Alpha, 0.7f);
+	CFGVAR(ESP_Buildings_Ignore_Local, false);
+	CFGVAR(ESP_Buildings_Ignore_Enemies, false);
+	CFGVAR(ESP_Buildings_Ignore_Teammates, true);
+	CFGVAR(ESP_Buildings_Show_Teammate_Dispensers, true);
+	CFGVAR(ESP_Buildings_Name, false);
+	CFGVAR(ESP_Buildings_Health, false);
+	CFGVAR(ESP_Buildings_HealthBar, true);
+	CFGVAR(ESP_Buildings_Level, false);
+	CFGVAR(ESP_Buildings_LevelBar, false);
+	CFGVAR(ESP_Buildings_Box, false);
+	CFGVAR(ESP_Buildings_Tracer, false);
+	CFGVAR(ESP_Buildings_Conds, true);
+
+	CFGVAR(ESP_World_Active, false);
+	CFGVAR(ESP_World_Alpha, 1.0f);
+	CFGVAR(ESP_World_Ignore_HealthPacks, false);
+	CFGVAR(ESP_World_Ignore_AmmoPacks, false);
+	CFGVAR(ESP_World_Ignore_LocalProjectiles, false);
+	CFGVAR(ESP_World_Ignore_EnemyProjectiles, false);
+	CFGVAR(ESP_World_Ignore_TeammateProjectiles, true);
+	CFGVAR(ESP_World_Ignore_Halloween_Gift, false);
+	CFGVAR(ESP_World_Ignore_MVM_Money, false);
+	CFGVAR(ESP_World_Name, true);
+	CFGVAR(ESP_World_Box, false);
+	CFGVAR(ESP_World_Tracer, false);
+
+#pragma endregion
+
+#pragma region Radar
+
+	CFGVAR(Radar_Active, false);
+	CFGVAR(Radar_Style, 1); //0 Rectangle 1 Circle
+	CFGVAR(Radar_Size, 250);
+	CFGVAR(Radar_Icon_Size, 18);
+	CFGVAR(Radar_Radius, 1200.0f);
+	CFGVAR(Radar_Cross_Alpha, 0.5f);
+	CFGVAR(Radar_Outline_Alpha, 1.0f);
+	CFGVAR(Radar_Background_Alpha, 0.9f);
+	CFGVAR(Radar_Pos_X, 20);
+	CFGVAR(Radar_Pos_Y, 20);
+
+	CFGVAR(Radar_Players_Active, true);
+	CFGVAR(Radar_Players_Ignore_Local, true);
+	CFGVAR(Radar_Players_Ignore_Friends, false);
+	CFGVAR(Radar_Players_Ignore_Teammates, true);
+	CFGVAR(Radar_Players_Ignore_Enemies, false);
+	CFGVAR(Radar_Players_Ignore_Invisible, false);
+	CFGVAR(Radar_Players_Show_Teammate_Medics, true);
+
+	CFGVAR(Radar_Buildings_Active, true);
+	CFGVAR(Radar_Buildings_Ignore_Local, false);
+	CFGVAR(Radar_Buildings_Ignore_Teammates, true);
+	CFGVAR(Radar_Buildings_Ignore_Enemies, false);
+	CFGVAR(Radar_Buildings_Show_Teammate_Dispensers, true);
+
+	CFGVAR(Radar_World_Active, true);
+	CFGVAR(Radar_World_Ignore_HealthPacks, false);
+	CFGVAR(Radar_World_Ignore_AmmoPacks, false);
+	CFGVAR(Radar_World_Ignore_Halloween_Gift, false);
+	CFGVAR(Radar_World_Ignore_MVM_Money, false);
+
+#pragma endregion
+
+#pragma region Materials
+
+	CFGVAR(Materials_Active, true);
+
+	CFGVAR(Materials_Players_Active, false);
+	CFGVAR(Materials_Players_No_Depth, false);
+	CFGVAR(Materials_Players_Alpha, 1.0f);
+	CFGVAR(Materials_Players_Material, 1); //0 Original 1 Flat 2 Shaded 3 Glossy 4 Glow 5 Plastic
+	CFGVAR(Materials_Players_Ignore_Local, false);
+	CFGVAR(Materials_Players_Ignore_Friends, false);
+	CFGVAR(Materials_Players_Ignore_Enemies, false);
+	CFGVAR(Materials_Players_Ignore_Teammates, true);
+	CFGVAR(Materials_Players_Ignore_LagRecords, false);
+	CFGVAR(Materials_Players_Show_Teammate_Medics, false);
+	CFGVAR(Materials_Players_LagRecords_Style, 1); //0 All 1 Last Only
+
+	CFGVAR(Materials_Buildings_Active, false);
+	CFGVAR(Materials_Buildings_No_Depth, false);
+	CFGVAR(Materials_Buildings_Alpha, 0.30f);
+	CFGVAR(Materials_Buildings_Material, 1); //0 Original 1 Flat 2 Shaded 3 Glossy 4 Glow 5 Plastic
+	CFGVAR(Materials_Buildings_Ignore_Local, false);
+	CFGVAR(Materials_Buildings_Ignore_Enemies, false);
+	CFGVAR(Materials_Buildings_Ignore_Teammates, false);
+	CFGVAR(Materials_Buildings_Show_Teammate_Dispensers, true);
+
+	CFGVAR(Materials_World_Active, false);
+	CFGVAR(Materials_World_No_Depth, false);
+	CFGVAR(Materials_World_Alpha, 0.0f);
+	CFGVAR(Materials_World_Material, 3); //0 Original 1 Flat 2 Shaded 3 Glossy 4 Glow 5 Plastic
+	CFGVAR(Materials_World_Ignore_HealthPacks, false);
+	CFGVAR(Materials_World_Ignore_AmmoPacks, false);
+	CFGVAR(Materials_World_Ignore_LocalProjectiles, false);
+	CFGVAR(Materials_World_Ignore_EnemyProjectiles, false);
+	CFGVAR(Materials_World_Ignore_TeammateProjectiles, false);
+	CFGVAR(Materials_World_Ignore_Halloween_Gift, false);
+	CFGVAR(Materials_World_Ignore_MVM_Money, false);
+
+	CFGVAR(Materials_ViewModel_Active, false);
+	CFGVAR(Materials_ViewModel_Hands_Alpha, 0.5f);
+	CFGVAR(Materials_ViewModel_Hands_Material, 1); //0 Original 1 Flat 2 Shaded 3 Glossy 4 Glow 5 Plastic
+	CFGVAR(Materials_ViewModel_Weapon_Alpha, 1.0f);
+	CFGVAR(Materials_ViewModel_Weapon_Material, 0); //0 Original 1 Flat 2 Shaded 3 Glossy 4 Glow 5 Plastic
+
+#pragma endregion
+
+#pragma region Outlines
+
+	CFGVAR(Outlines_Active, true);
+	CFGVAR(Outlines_Style, 1); //0 Bloom 1 Crisp 2 Cartoony 3 Cartoony Alt
+	CFGVAR(Outlines_Bloom_Amount, 1);
+
+	CFGVAR(Outlines_Players_Active, true);
+	CFGVAR(Outlines_Players_Alpha, 1.0f);
+	CFGVAR(Outlines_Players_Ignore_Local, false);
+	CFGVAR(Outlines_Players_Ignore_Friends, false);
+	CFGVAR(Outlines_Players_Ignore_Enemies, false);
+	CFGVAR(Outlines_Players_Ignore_Teammates, true);
+	CFGVAR(Outlines_Players_Show_Teammate_Medics, true);
+
+	CFGVAR(Outlines_Buildings_Active, true);
+	CFGVAR(Outlines_Buildings_Alpha, 1.0f);
+	CFGVAR(Outlines_Buildings_Ignore_Local, false);
+	CFGVAR(Outlines_Buildings_Ignore_Enemies, false);
+	CFGVAR(Outlines_Buildings_Ignore_Teammates, true);
+	CFGVAR(Outlines_Buildings_Show_Teammate_Dispensers, true);
+
+	CFGVAR(Outlines_World_Active, true);
+	CFGVAR(Outlines_World_Alpha, 1.0f);
+	CFGVAR(Outlines_World_Ignore_HealthPacks, false);
+	CFGVAR(Outlines_World_Ignore_AmmoPacks, false);
+	CFGVAR(Outlines_World_Ignore_LocalProjectiles, false);
+	CFGVAR(Outlines_World_Ignore_EnemyProjectiles, false);
+	CFGVAR(Outlines_World_Ignore_TeammateProjectiles, true);
+	CFGVAR(Outlines_World_Ignore_Halloween_Gift, false);
+	CFGVAR(Outlines_World_Ignore_MVM_Money, false);
+
+#pragma endregion
+
+#pragma region OtherVisuals
+
+	CFGVAR(Visuals_Aimbot_FOV_Circle, true);
+	CFGVAR(Visuals_Aimbot_FOV_Circle_Alpha, 0.53f);
+	CFGVAR(Visuals_Aimbot_FOV_Circle_Color, Color_t({ 255, 255, 255, 255 }));  // Custom color for FOV circle
+	CFGVAR(Visuals_Aimbot_FOV_Circle_RGB, false);  // RGB rainbow mode for FOV circle
+	CFGVAR(Visuals_Aimbot_FOV_Circle_RGB_Rate, 3.0f);  // RGB color cycle rate
+	CFGVAR(Visuals_Aimbot_FOV_Circle_Glow, false);  // Shader-based glow/bloom effect (like Paint)
+	CFGVAR(Visuals_Aimbot_FOV_Circle_Bloom_Amount, 5);  // Bloom intensity (1-10)
+	CFGVAR(Visuals_Crit_Indicator, false);
+	CFGVAR(Visuals_Crit_Indicator_Pos_X, 801);
+	CFGVAR(Visuals_Crit_Indicator_Pos_Y, 652);
+	CFGVAR(Visuals_Crit_Indicator_Debug, false);
+	CFGVAR(Visuals_Draw_Movement_Path_Style, 1); //0 Off 1 Line 2 Separators 3 Spaced 4 Arrows 5 Boxes (Amalgam-style)
+	
+	// Amalgam Simulation Visuals
+	CFGVAR(Visuals_Simulation_Movement_Style, 1); // 0=Off, 1=Line, 2=Dashed, 3=Arrows
+	CFGVAR(Visuals_Simulation_Projectile_Style, 0); // 0=Off, 1=Line, 2=Dashed, 3=Arrows
+	
+	// Trajectory Preview (real-time projectile path visualization)
+	CFGVAR(Visuals_Trajectory_Preview_Active, true); // Enable real-time trajectory preview
+	CFGVAR(Visuals_Trajectory_Preview_Style, 0); // 0=Off, 1=Line, 2=Separators, 3=Spaced, 4=Arrows, 5=Boxes
+	CFGVAR(Visuals_Trajectory_Preview_Box, true); // Draw box at impact point
+	CFGVAR(Visuals_FOV_Override, 100.0f);
+	CFGVAR(Visuals_Remove_Scope, false);
+	CFGVAR(Visuals_Remove_Zoom, false);
+	CFGVAR(Visuals_Remove_Punch, true);
+	CFGVAR(Visuals_Remove_Screen_Overlay, true);
+	CFGVAR(Visuals_Remove_Screen_Shake, true);
+	CFGVAR(Visuals_Remove_Screen_Fade, true);
+	CFGVAR(Visuals_Removals_Mode, 1); //0 Everyone 1 Local Only
+	CFGVAR(Visuals_Reveal_Scoreboard, true);
+	CFGVAR(Visuals_Scoreboard_Utility, true);
+	CFGVAR(Visuals_Tracer_Type, 0); //0 Default 1 C.A.P.P.E.R 2 Machina (White) 3 Machina (Team) 4 Big Nasty 5 Short Circuit 6 Mrasmus Zap 7 Random 8 Random (No Merasmus Zap)
+
+	CFGVAR(Visuals_ViewModel_Active, false);
+	CFGVAR(Visuals_ViewModel_Sway, false);
+	CFGVAR(Visuals_ViewModel_Sway_Scale, 0.10f);
+	CFGVAR(Visuals_ViewModel_Offset_Forward, 0.0f);
+	CFGVAR(Visuals_ViewModel_Offset_Right, 0.0f);
+	CFGVAR(Visuals_ViewModel_Offset_Up, 0.0f);
+	CFGVAR(Visuals_ViewModel_Minimal, false);
+	CFGVAR(Visuals_Viewmodel_Flip, false);
+	CFGVAR(Visuals_ViewModel_WorldModel, false);
+
+	CFGVAR(Visuals_Flat_Textures, false);
+	CFGVAR(Visuals_Remove_Fog, false);
+	CFGVAR(Visuals_Remove_Sky_Fog, true);
+	CFGVAR(Visuals_Night_Mode, 0.0f);
+	CFGVAR(Visuals_World_Modulation_Mode, 0); //0 Night 1 Custom Colors
+	CFGVAR(Visuals_World_Modulation_No_Sky_Change, false);
+	CFGVAR(Visuals_Distance_Prop_Alpha, false);
+
+	CFGVAR(Visuals_Thirdperson_Active, false);
+	CFGVAR(Visuals_Thirdperson_Key, 0);
+	CFGVAR(Visuals_Thirdperson_Offset_Forward, 84.0f);
+	CFGVAR(Visuals_Thirdperson_Offset_Right, 0.0f);
+	CFGVAR(Visuals_Thirdperson_Offset_Up, 15.0f);
+
+	CFGVAR(Visuals_SpectatorList_Active, true);
+	CFGVAR(Visuals_SpectatorList_Avatars, true);
+	CFGVAR(Visuals_SpectatorList_Outline_Alpha, 1.0f);
+	CFGVAR(Visuals_SpectatorList_Background_Alpha, 0.9f);
+	CFGVAR(Visuals_SpectatorList_Pos_X, 0);
+	CFGVAR(Visuals_SpectatorList_Pos_Y, 275);
+	CFGVAR(Visuals_SpectatorList_Width, 200);
+
+	CFGVAR(Visuals_Ragdolls_Active, false);
+	CFGVAR(Visuals_Ragdolls_No_Gib, false);
+	CFGVAR(Visuals_Ragdolls_No_Death_Anim, false);
+	CFGVAR(Visuals_Ragdolls_Effect, 0); //0 Default 1 Burning 2 Electrocuted 3 Ash 4 Gold 5 Ice 6 Dissolve 7 Random
+	CFGVAR(Visuals_Ragdolls_Force_Mult, 1.0f);
+
+	CFGVAR(Visuals_Paint_Active, false);
+	CFGVAR(Visuals_Paint_Key, 0);
+	CFGVAR(Visuals_Paint_Erase_Key, 0);
+	CFGVAR(Visuals_Paint_LifeTime, 2.0f);
+	CFGVAR(Visuals_Paint_Bloom_Amount, 7);
+
+	CFGVAR(Visuals_Disable_Detail_Props, false);
+	CFGVAR(Visuals_Disable_Ragdolls, false);
+	CFGVAR(Visuals_Disable_Wearables, false);
+	CFGVAR(Visuals_Disable_Post_Processing, false);
+	CFGVAR(Visuals_Disable_Dropped_Weapons, false);
+	CFGVAR(Visuals_Simple_Models, false);
+	CFGVAR(Visuals_Auto_Interp, true); // Auto interp based on weapon type
+	CFGVAR(Visuals_Particles_Mode, 0); //0 Original 1 Custom Color 2 Rainbow
+	CFGVAR(Visuals_Particles_Rainbow_Rate, 10.0f);
+
+	CFGVAR(Visuals_Beams_Active, false);
+	CFGVAR(Visuals_Beams_LifeTime, 2.0f);
+	CFGVAR(Visuals_Beams_Width, 6.0f);
+	CFGVAR(Visuals_Beams_EndWidth, 1.0f);
+	CFGVAR(Visuals_Beams_FadeLength, 2.0f);
+	CFGVAR(Visuals_Beams_Amplitude, 3.1f);
+	CFGVAR(Visuals_Beams_Speed, 0.0f);
+	CFGVAR(Visuals_Beams_Flag_FBEAM_FADEIN, true);
+	CFGVAR(Visuals_Beams_Flag_FBEAM_FADEOUT, true);
+	CFGVAR(Visuals_Beams_Flag_FBEAM_SINENOISE, false);
+	CFGVAR(Visuals_Beams_Flag_FBEAM_SOLID, false);
+	CFGVAR(Visuals_Beams_Flag_FBEAM_SHADEIN, true);
+	CFGVAR(Visuals_Beams_Flag_FBEAM_SHADEOUT, true);
+
+	CFGVAR(Visuals_SpyCamera_Active, false);
+	CFGVAR(Visuals_SpyCamera_Background_Alpha, 0.9f);
+	CFGVAR(Visuals_SpyCamera_Pos_X, 1598);
+	CFGVAR(Visuals_SpyCamera_Pos_Y, -9);
+	CFGVAR(Visuals_SpyCamera_Pos_W, 400);
+	CFGVAR(Visuals_SpyCamera_Pos_H, 250);
+	CFGVAR(Visuals_SpyCamera_FOV, 90.0f);
+
+	CFGVAR(Viuals_SpyWarning_Active, true);
+	CFGVAR(Viuals_SpyWarning_Announce, false);
+	CFGVAR(Viuals_SpyWarning_Ignore_Cloaked, false);
+	CFGVAR(Viuals_SpyWarning_Ignore_Friends, false);
+	CFGVAR(Viuals_SpyWarning_Ignore_Invisible, false);
+
+	CFGVAR(Visuals_TeamWellBeing_Active, false);
+	CFGVAR(Visuals_TeamWellBeing_Medic_Only, false);
+	CFGVAR(Visuals_TeamWellBeing_Background_Alpha, 0.9f);
+	CFGVAR(Visuals_TeamWellBeing_Pos_X, 1402);
+	CFGVAR(Visuals_TeamWellBeing_Pos_Y, 273);
+	CFGVAR(Visuals_TeamWellBeing_Width, 200);
+
+	CFGVAR(Visuals_Custom_Skybox_Texture_Name, std::string({ "" }));
+
+	CFGVAR(Visuals_Chat_Teammate_Votes, true);
+	CFGVAR(Visuals_Chat_Enemy_Votes, true);
+	CFGVAR(Visuals_Chat_Player_List_Info, true);
+	CFGVAR(Visuals_Chat_Name_Tags, true);
+
+	CFGVAR(Visuals_Weather, 0); // 0 = Off, 1 = Rain, 2 = Light Rain
+
+#pragma endregion
+
+#pragma region Misc
+
+	CFGVAR(Misc_Bunnyhop, true);
+	CFGVAR(Misc_Choke_On_Bhop, false);
+	CFGVAR(Misc_Crouch_While_Airborne, false);
+	CFGVAR(Misc_Taunt_Slide, true);
+	CFGVAR(Misc_Taunt_Slide_Control, true);
+	CFGVAR(Misc_Taunt_Spin_Key, 0);
+	CFGVAR(Misc_Taunt_Spin_Speed, 9.0f);
+	CFGVAR(Misc_Taunt_Spin_Sine, true);
+	CFGVAR_NOSAVE(Misc_Accuracy_Improvements, true);
+	CFGVAR(Visuals_Disable_Interp, false);
+	CFGVAR(Misc_Pure_Bypass, true);
+	CFGVAR(Misc_NoiseMaker_Spam, false);
+	CFGVAR(Misc_No_Push, false);
+	CFGVAR(Misc_MVM_Giant_Weapon_Sounds, false);
+	CFGVAR(Misc_Fake_Taunt, false);
+	CFGVAR(Misc_Ping_Reducer, true); // Network fix (input delay fix)
+	CFGVAR(Misc_Ping_Reducer_Active, false); // Enable ping reducer
+	CFGVAR(Misc_Ping_Reducer_Value, 1.0f); // Ping reducer multiplier (0.1 - 1.0)
+	CFGVAR(Misc_Pred_Error_Jitter_Fix, true);
+	CFGVAR(Misc_SetupBones_Optimization, true);
+	CFGVAR(Misc_ComputeLightingOrigin_Fix, true);
+	CFGVAR(Misc_Equip_Region_Unlock, false);
+	CFGVAR(Misc_Fast_Stop, false);
+	CFGVAR(Misc_Auto_Strafe, true);
+	CFGVAR(Misc_Auto_Strafe_Avoid_Walls, false);
+	CFGVAR(Misc_Auto_Strafe_Turn_Scale, 0.40f);
+	CFGVAR(Misc_Auto_Strafe_Max_Delta, 180.0f);
+	CFGVAR(Misc_Shield_Turn_Rate, true);
+	CFGVAR(Misc_Prevent_Server_Angle_Change, true);
+	CFGVAR(Misc_Edge_Jump_Key, 0);
+	CFGVAR(Misc_Auto_Rocket_Jump_Key, 0);
+	CFGVAR(Misc_Auto_Rocket_Jump_Mode, 2); // 0 = Amalgam Style (High), 1 = Forward Style
+	CFGVAR(Misc_Auto_Rocket_Jump_High_Forward_Bias, 138); // 0-2000: Lower = more forward, Higher = more vertical
+	CFGVAR(Misc_Auto_Disguise, true);
+	CFGVAR(Misc_Auto_Call_Medic_On_Damage, false);
+	CFGVAR(Misc_Auto_Call_Medic_Low_HP, false);
+	CFGVAR(Misc_Auto_Call_Medic_Low_HP_Class, 0);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Scout, 80);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Soldier, 100);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Pyro, 100);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Demoman, 90);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Heavy, 230);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Engineer, 80);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Sniper, 70);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Spy, 80);
+	CFGVAR(Misc_Auto_Call_Medic_HP_Medic, 100);
+	CFGVAR(Misc_Auto_Medigun_Key, 0);
+	CFGVAR(Misc_Movement_Lock_Key, 0);
+	CFGVAR(Misc_Clean_Screenshot, true);
+	CFGVAR(Misc_Backpack_Expander, true);
+
+	CFGVAR(Misc_AutoFaN_Key, 0);
+
+	CFGVAR(Misc_MVM_Instant_Respawn_Key, 0);
+	CFGVAR(Misc_MVM_Instant_Revive, false);
+
+	CFGVAR(Misc_AntiCheat_Enabled, false);
+	CFGVAR(Misc_AntiCheat_SkipCritDetection, false);
+
+	CFGVAR(Exploits_Shifting_Recharge_Key, 0);
+
+	CFGVAR(Exploits_RapidFire_Key, 0);
+	CFGVAR(Exploits_RapidFire_Ticks, 22);
+	CFGVAR(Exploits_RapidFire_Min_Ticks_Target_Same, 5);
+	CFGVAR(Exploits_RapidFire_Antiwarp, true);
+	CFGVAR(Exploits_Warp_Key, 0);
+	CFGVAR(Exploits_Warp_Mode, 1); //0 Slow 1 Full
+	CFGVAR(Exploits_Warp_Exploit, 0); //0 None 1 Fake Peek 2 0 Velocity
+	CFGVAR(Exploits_Shifting_Draw_Indicator, false);
+	CFGVAR(Exploits_Shifting_Indicator_Style, 0); //0 Rectangle 1 Circle
+	CFGVAR(Exploits_Shifting_FakeLag_Text_X, 16);
+	CFGVAR(Exploits_Shifting_FakeLag_Text_Y, 2);
+	CFGVAR(Exploits_Shifting_FakeLag_Text_Size, 100); // Percentage: 50-200
+
+	CFGVAR(Exploits_FakeLag_Enabled, false);
+	CFGVAR(Exploits_FakeLag_Only_Moving, false);
+	CFGVAR(Exploits_FakeLag_Activate_On_Sightline, false);
+	CFGVAR(Exploits_FakeLag_Ignore_DT_Ticks, false);
+	CFGVAR(Exploits_FakeLag_Indicator, false);
+	CFGVAR(Exploits_FakeLag_Max_Ticks, 12);
+
+	CFGVAR(Exploits_Crits_Force_Crit_Key, 0);
+	CFGVAR(Exploits_Crits_Force_Crit_Key_Melee, 0);
+	CFGVAR(Exploits_Crits_Skip_Random_Crits, true);
+	CFGVAR(Exploits_Crits_Ignore_Ban, false);
+
+	CFGVAR(Exploits_SeedPred_Active, true);
+	CFGVAR(Exploits_SeedPred_DrawIndicator, false);
+
+	CFGVAR(Misc_Chat_Medieval, false);
+	CFGVAR(Misc_Chat_Owoify, false);
+
+	CFGVAR(Misc_Freeze_Queue, false);
+	CFGVAR(Misc_Auto_Queue, false);
+	CFGVAR(Misc_Anti_AFK, true);
+	
+	CFGVAR(Misc_Projectile_Dodge_Enabled, false);
+	CFGVAR(Misc_Projectile_Dodge_Use_Warp, false);
+	CFGVAR(Misc_Projectile_Dodge_Only_Warp, false);
+	CFGVAR(Misc_Projectile_Dodge_Disable_DT_Airborne, false);
+
+#pragma endregion
+
+#pragma region Colors
+
+	CFGVAR(Color_Local, Color_t({ 43, 203, 186, 255 }));
+	CFGVAR(Color_Friend, Color_t({ 38, 222, 129, 255 }));
+	CFGVAR(Color_Enemy, Color_t({ 253, 159, 19, 255 }));
+	CFGVAR(Color_Teammate, Color_t({ 196, 1, 235, 255 }));
+	CFGVAR(Color_Target, Color_t({ 57, 88, 254, 255 }));
+	CFGVAR(Color_Invulnerable, Color_t({ 165, 94, 234, 255 }));
+	CFGVAR(Color_Invisible, Color_t({ 209, 216, 224, 255 }));
+	CFGVAR(Color_Cheater, Color_t({ 248, 253, 8, 255 }));
+	CFGVAR(Color_RetardLegit, Color_t({ 253, 3, 11, 255 }));
+	CFGVAR(Color_OverHeal, Color_t({ 69, 170, 242, 255 }));
+	CFGVAR(Color_Uber, Color_t({ 224, 86, 253, 255 }));
+	CFGVAR(Color_Conds, Color_t({ 249, 202, 36, 255 }));
+	CFGVAR(Color_HealthPack, Color_t({ 46, 204, 113, 255 }));
+	CFGVAR(Color_AmmoPack, Color_t({ 200, 200, 200, 255 }));
+	CFGVAR(Color_Beams, Color_t({ 200, 200, 200, 255 }));
+	CFGVAR(Color_Halloween_Gift, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_MVM_Money, Color_t({ 0, 200, 20, 255 }));
+	CFGVAR(Color_Particles, Color_t({ 253, 75, 19, 255 }));
+	CFGVAR(Color_World, Color_t({ 79, 113, 254, 255 }));
+	CFGVAR(Color_Sky, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_Props, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_Hands, Color_t({ 26, 137, 253, 255 }));
+	CFGVAR(Color_Hands_Sheen, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_Weapon, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_Weapon_Sheen, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_Simulation_Movement, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_Simulation_Projectile, Color_t({ 255, 255, 255, 255 }));
+	CFGVAR(Color_Trajectory, Color_t({ 255, 255, 255, 255 })); // Single trajectory color
+
+	CFGVAR_NOSAVE(Color_ESP_Text, Color_t({ 200, 200, 200, 255 }));
+	CFGVAR_NOSAVE(Color_ESP_Outline, Color_t({ 10, 10, 10, 255 }));
+
+#pragma endregion
+
+#pragma region Menu
+
+	CFGVAR_NOSAVE(Menu_Pos_X, 500);
+	CFGVAR_NOSAVE(Menu_Pos_Y, 200);
+	CFGVAR_NOSAVE(Menu_Width, 555);
+	CFGVAR_NOSAVE(Menu_Height, 620);
+	CFGVAR_NOSAVE(Menu_Drag_Bar_Height, 15);
+
+	CFGVAR_NOSAVE(Menu_Spacing_X, 3);
+	CFGVAR_NOSAVE(Menu_Spacing_Y, 3);
+
+	CFGVAR_NOSAVE(Menu_Tab_Button_Width, 60);
+	CFGVAR_NOSAVE(Menu_Tab_Button_Height, 18);
+
+	CFGVAR_NOSAVE(Menu_CheckBox_Width, 10);
+	CFGVAR_NOSAVE(Menu_CheckBox_Height, 10);
+
+	CFGVAR_NOSAVE(Menu_Slider_Width, 100);
+	CFGVAR_NOSAVE(Menu_Slider_Height, 6);
+
+	CFGVAR_NOSAVE(Menu_InputKey_Width, 60);
+	CFGVAR_NOSAVE(Menu_InputKey_Height, 14);
+
+	CFGVAR_NOSAVE(Menu_InputText_Width, 150);
+	CFGVAR_NOSAVE(Menu_InputText_Height, 30);
+
+	CFGVAR_NOSAVE(Menu_Select_Width, 120);
+	CFGVAR_NOSAVE(Menu_Select_Height, 14);
+
+	CFGVAR_NOSAVE(Menu_ColorPicker_Preview_Width, 10);
+	CFGVAR_NOSAVE(Menu_ColorPicker_Preview_Height, 10);
+
+	CFGVAR(Menu_Text, Color_t({ 240, 240, 240, 255 }));
+	CFGVAR(Menu_Text_Active, Color_t({ 220, 220, 220, 255 }));
+	CFGVAR(Menu_Text_Inactive, Color_t({ 160, 160, 160, 255 }));
+	CFGVAR(Menu_Text_Disabled, Color_t({ 100, 100, 100, 255 }));
+
+	CFGVAR(Menu_Accent_Primary, Color_t({ 1, 18, 246, 255 }));
+	CFGVAR(Menu_Accent_Secondary, Color_t({ 181, 193, 254, 255 }));
+	CFGVAR(Menu_Accent_Secondary_RGB, false);  // RGB rainbow mode for accent secondary
+	CFGVAR(Menu_Accent_Secondary_RGB_Rate, 3.0f);  // RGB color cycle rate
+	CFGVAR(Menu_Background, Color_t({ 0, 6, 20, 255 }));
+
+	CFGVAR(Menu_Snow, false);
+
+	// Draggable GroupBox positions (column * 100 + order)
+	// Misc tab
+	CFGVAR(Menu_GroupBox_Misc_Misc, 200);    // Right column, order 0
+	CFGVAR(Menu_GroupBox_Misc_Game, 201);    // Right column, order 1
+	CFGVAR(Menu_GroupBox_Misc_MvM, 102);     // Middle column, order 2
+	CFGVAR(Menu_GroupBox_Misc_Chat, 101);    // Middle column, order 1
+	CFGVAR(Menu_GroupBox_Misc_Taunt, 103);   // Middle column, order 3
+	CFGVAR(Menu_GroupBox_Misc_Auto, 100);    // Middle column, order 0
+	CFGVAR(Menu_GroupBox_Misc_Movement, 0);  // Left column, order 0
+
+	// Exploits tab
+	CFGVAR(Menu_GroupBox_Exploits_Shifting, 0);
+	CFGVAR(Menu_GroupBox_Exploits_FakeLag, 200);
+	CFGVAR(Menu_GroupBox_Exploits_Crits, 100);
+	CFGVAR(Menu_GroupBox_Exploits_NoSpread, 201);
+
+	// Aim tab
+	CFGVAR(Menu_GroupBox_Aim_General, 0);
+	CFGVAR(Menu_GroupBox_Aim_Hitscan, 100);
+	CFGVAR(Menu_GroupBox_Aim_Projectile, 200);
+	CFGVAR(Menu_GroupBox_Aim_Melee, 201);
+
+#pragma endregion
+}
