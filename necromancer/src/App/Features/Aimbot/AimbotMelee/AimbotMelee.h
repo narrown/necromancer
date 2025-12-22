@@ -15,7 +15,7 @@ class CAimbotMelee
 	std::vector<MeleeTarget_t> m_vecTargets = {};
 
 	int GetSwingTime(C_TFWeaponBase* pWeapon);
-	bool CanSee(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeTarget_t& target);
+	bool CanHit(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeTarget_t& target);
 	bool GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeTarget_t& outTarget);
 	bool ShouldAim(const CUserCmd* pCmd, C_TFWeaponBase* pWeapon);
 	void Aim(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, const Vec3& vAngles);

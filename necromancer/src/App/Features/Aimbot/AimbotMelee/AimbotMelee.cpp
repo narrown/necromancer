@@ -56,12 +56,8 @@ bool CAimbotMelee::ShouldTargetFriendlyBuilding(C_BaseObject* pBuilding, C_TFWea
 	return false;
 }
 
-bool CAimbotMelee::CanSee(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeTarget_t& target)
+bool CAimbotMelee::CanHit(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeTarget_t& target)
 {
-	// OPTIMIZATION: Use squared distance to avoid sqrt
-	if (pLocal->GetShootPos().DistToSqr(target.Position) > 360000.0f) // 600^2
-		return false;
-
 	// Get weapon-specific range and hull size
 	float flRange = SDKUtils::AttribHookValue(pWeapon->GetSwingRange(), "melee_range_multiplier", pWeapon);
 	float flHull = SDKUtils::AttribHookValue(18.0f, "melee_bounds_multiplier", pWeapon);
@@ -83,217 +79,117 @@ bool CAimbotMelee::CanSee(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeTarg
 	Vec3 vSwingMins = { -flHull, -flHull, -flHull };
 	Vec3 vSwingMaxs = { flHull, flHull, flHull };
 
-	// Get swing time for prediction
-	const int iSwingTicks = GetSwingTime(pWeapon);
+	const Vec3 vEyePos = pLocal->GetShootPos();
 	const bool bIsPlayer = target.Entity->GetClassId() == ETFClassIds::CTFPlayer;
 
-	auto checkPos = [&](const Vec3& vLocalPos, const LagRecord_t* pRecord, const Vec3* pPredictedTargetPos = nullptr) -> bool
+	// For players with lag records, we need to test against the record's position
+	if (bIsPlayer && target.LagRecord)
 	{
-		// Set up lag record if provided
-		if (pRecord)
-			F::LagRecordMatrixHelper->Set(pRecord);
+		const auto pRecord = target.LagRecord;
+		
+		// Store original entity state
+		Vec3 vRestoreOrigin = target.Entity->GetAbsOrigin();
+		Vec3 vRestoreMins = target.Entity->m_vecMins();
+		Vec3 vRestoreMaxs = target.Entity->m_vecMaxs();
 
-		// Calculate optimal target position
-		Vec3 vTargetPos = target.Position;
-		
-		// Use predicted position if provided (for swing prediction)
-		if (pPredictedTargetPos)
-		{
-			vTargetPos = *pPredictedTargetPos;
-		}
-		else if (pRecord && bIsPlayer)
-		{
-			// For backtrack records, use the record position directly
-			// The server will lag compensate to this position - don't extrapolate!
-			Vec3 vOrigin = pRecord->AbsOrigin;
-			Vec3 vMins = target.Entity->m_vecMins() + 0.125f;
-			Vec3 vMaxs = target.Entity->m_vecMaxs() - 0.125f;
-			
-			// Calculate optimal Z position (aim at same height as local player when possible)
-			float flZDiff = std::clamp(vLocalPos.z - vOrigin.z, vMins.z, vMaxs.z);
-			vTargetPos = vOrigin + Vec3(0, 0, flZDiff);
-		}
-		else if (pRecord)
-		{
-			vTargetPos = pRecord->Center;
-		}
-		
-		// Calculate angle to optimal target position
-		Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vTargetPos);
+		// Set entity to record's position and bounds (account for origin compression like Amalgam)
+		target.Entity->SetAbsOrigin(pRecord->AbsOrigin);
+		target.Entity->m_vecMins() = target.Entity->m_vecMins() + 0.125f;
+		target.Entity->m_vecMaxs() = target.Entity->m_vecMaxs() - 0.125f;
+
+		// Calculate optimal aim position - aim at Z height that matches local player when possible
+		Vec3 vDiff = { 0, 0, std::clamp(vEyePos.z - pRecord->AbsOrigin.z, target.Entity->m_vecMins().z, target.Entity->m_vecMaxs().z) };
+		target.Position = pRecord->AbsOrigin + vDiff;
+		target.AngleTo = Math::CalcAngle(vEyePos, target.Position);
+
 		Vec3 vForward;
-		Math::AngleVectors(vAngleTo, &vForward);
-		Vec3 vTraceEnd = vLocalPos + (vForward * flRange);
+		Math::AngleVectors(target.AngleTo, &vForward);
+		Vec3 vTraceEnd = vEyePos + (vForward * flRange);
+
+		// Set up bones for the trace
+		F::LagRecordMatrixHelper->Set(pRecord);
 
 		// First try: simple trace
-		bool bCanSee = H::AimUtils->TraceEntityMelee(target.Entity, vLocalPos, vTraceEnd);
+		trace_t trace = {};
+		CTraceFilterHitscan filter = {};
+		filter.m_pIgnore = pLocal;
 		
-		// Second try: hull trace if simple trace failed
-		if (!bCanSee)
-		{
-			trace_t trace = {};
-			CTraceFilterHitscan filter = {};
-			filter.m_pIgnore = pLocal;
-			
-			H::AimUtils->TraceHull(vLocalPos, vTraceEnd, vSwingMins, vSwingMaxs, MASK_SOLID, &filter, &trace);
-			bCanSee = trace.m_pEnt && trace.m_pEnt == target.Entity;
-		}
+		H::AimUtils->TraceHull(vEyePos, vTraceEnd, {}, {}, MASK_SOLID, &filter, &trace);
+		bool bHit = trace.m_pEnt && trace.m_pEnt == target.Entity;
 		
-		// Third try: scan multiple hitbox points for better coverage
-		if (!bCanSee && pRecord && bIsPlayer)
+		// Second try: hull trace
+		if (!bHit)
 		{
-			// Try different hitboxes: body, pelvis, head
-			static const int hitboxes[] = { HITBOX_BODY, HITBOX_PELVIS, HITBOX_HEAD };
-			for (int hb : hitboxes)
-			{
-				Vec3 vHitboxPos = SDKUtils::GetHitboxPosFromMatrix(
-					target.Entity->As<C_TFPlayer>(), hb, 
-					const_cast<matrix3x4_t*>(pRecord->BoneMatrix)
-				);
-				
-				Vec3 vHitboxAngle = Math::CalcAngle(vLocalPos, vHitboxPos);
-				Vec3 vHitboxForward;
-				Math::AngleVectors(vHitboxAngle, &vHitboxForward);
-				Vec3 vHitboxTraceEnd = vLocalPos + (vHitboxForward * flRange);
-				
-				if (H::AimUtils->TraceEntityMelee(target.Entity, vLocalPos, vHitboxTraceEnd))
-				{
-					bCanSee = true;
-					vAngleTo = vHitboxAngle;
-					vTargetPos = vHitboxPos;
-					break;
-				}
-			}
+			H::AimUtils->TraceHull(vEyePos, vTraceEnd, vSwingMins, vSwingMaxs, MASK_SOLID, &filter, &trace);
+			bHit = trace.m_pEnt && trace.m_pEnt == target.Entity;
 		}
 
-		// Check if we can hit with current view angles (for smooth/assistive aim)
+		F::LagRecordMatrixHelper->Restore();
+
+		// Restore entity state
+		target.Entity->SetAbsOrigin(vRestoreOrigin);
+		target.Entity->m_vecMins() = vRestoreMins;
+		target.Entity->m_vecMaxs() = vRestoreMaxs;
+
+		if (bHit)
+		{
+			target.MeleeTraceHit = true;
+			return true;
+		}
+
+		// For smooth/assistive aim, check if current view angles can hit
 		if (CFG::Aimbot_Melee_Aim_Type == 2 || CFG::Aimbot_Melee_Aim_Type == 3)
 		{
 			Vec3 vCurrentForward;
 			Math::AngleVectors(I::EngineClient->GetViewAngles(), &vCurrentForward);
-			Vec3 vCurrentTraceEnd = vLocalPos + (vCurrentForward * flRange);
+			Vec3 vCurrentTraceEnd = vEyePos + (vCurrentForward * flRange);
 			
-			target.MeleeTraceHit = H::AimUtils->TraceEntityMelee(target.Entity, vLocalPos, vCurrentTraceEnd);
-		}
-		else
-		{
-			target.MeleeTraceHit = bCanSee;
+			target.MeleeTraceHit = H::AimUtils->TraceEntityMelee(target.Entity, vEyePos, vCurrentTraceEnd);
+			return target.MeleeTraceHit;
 		}
 
-		// Update target angle and position if we found a valid hit
-		if (bCanSee)
-		{
-			target.AngleTo = vAngleTo;
-			target.Position = vTargetPos;
-		}
+		return false;
+	}
 
-		// Restore lag record
-		if (pRecord)
-			F::LagRecordMatrixHelper->Restore();
+	// For non-backtrack targets (buildings, current position fallback)
+	target.AngleTo = Math::CalcAngle(vEyePos, target.Position);
+	
+	Vec3 vForward;
+	Math::AngleVectors(target.AngleTo, &vForward);
+	Vec3 vTraceEnd = vEyePos + (vForward * flRange);
 
-		return bCanSee;
-	};
-
-	// Try current position first
-	if (checkPos(pLocal->GetShootPos(), target.LagRecord))
+	// First try: simple trace
+	bool bHit = H::AimUtils->TraceEntityMelee(target.Entity, vEyePos, vTraceEnd);
+	
+	// Second try: hull trace
+	if (!bHit)
 	{
+		trace_t trace = {};
+		CTraceFilterHitscan filter = {};
+		filter.m_pIgnore = pLocal;
+		
+		H::AimUtils->TraceHull(vEyePos, vTraceEnd, vSwingMins, vSwingMaxs, MASK_SOLID, &filter, &trace);
+		bHit = trace.m_pEnt && trace.m_pEnt == target.Entity;
+	}
+
+	if (bHit)
+	{
+		target.MeleeTraceHit = true;
 		return true;
 	}
 
-	// Try swing prediction if enabled
-	if (!CFG::Aimbot_Melee_Predict_Swing || pLocal->InCond(TF_COND_SHIELD_CHARGE) || pWeapon->GetWeaponID() == TF_WEAPON_KNIFE)
+	// For smooth/assistive aim, check if current view angles can hit
+	if (CFG::Aimbot_Melee_Aim_Type == 2 || CFG::Aimbot_Melee_Aim_Type == 3)
 	{
-		return false;
+		Vec3 vCurrentForward;
+		Math::AngleVectors(I::EngineClient->GetViewAngles(), &vCurrentForward);
+		Vec3 vCurrentTraceEnd = vEyePos + (vCurrentForward * flRange);
+		
+		target.MeleeTraceHit = H::AimUtils->TraceEntityMelee(target.Entity, vEyePos, vCurrentTraceEnd);
+		return target.MeleeTraceHit;
 	}
 
-	if (iSwingTicks <= 0)
-		return false;
-
-	// Only simulate for enemies that are close enough to potentially hit within swing time
-	// Skip simulation for friendly buildings (they don't move) and teammates
-	if (target.bIsFriendlyBuilding)
-		return false;
-
-	// Skip simulation for targets too far away - max reasonable melee chase distance
-	// Consider max speed (~450 u/s) * swing time + melee range
-	const float flMaxSimDistance = 450.0f * (iSwingTicks * I::GlobalVars->interval_per_tick) + flRange + 100.0f;
-	if (target.DistanceTo > flMaxSimDistance)
-		return false;
-
-	// Initialize movement simulations
-	MoveStorage localStorage, targetStorage;
-	F::MoveSim.Initialize(pLocal, localStorage, false, true);
-	
-	// Only simulate enemy players, not buildings (they don't move)
-	if (bIsPlayer && target.Entity->m_iTeamNum() != pLocal->m_iTeamNum())
-		F::MoveSim.Initialize(target.Entity, targetStorage, false);
-	else if (bIsPlayer)
-		return false; // Don't simulate teammates
-
-	// Path storage for visualization
-	std::vector<Vec3> vLocalPath, vTargetPath;
-	vLocalPath.push_back(pLocal->m_vecOrigin());
-
-	if (bIsPlayer)
-		vTargetPath.push_back(target.Entity->m_vecOrigin());
-
-	bool bFoundHit = false;
-
-	// Simulate movement for swing duration
-	const bool bSimulateTarget = bIsPlayer && !targetStorage.m_bFailed && !targetStorage.m_bInitFailed;
-	
-	for (int i = 0; i < iSwingTicks; i++)
-	{
-		// Simulate local player
-		if (!localStorage.m_bFailed)
-		{
-			F::MoveSim.RunTick(localStorage);
-			vLocalPath.push_back(localStorage.m_MoveData.m_vecAbsOrigin);
-		}
-
-		// Simulate target player (only for enemy players)
-		if (bSimulateTarget)
-		{
-			F::MoveSim.RunTick(targetStorage);
-			vTargetPath.push_back(targetStorage.m_vPredictedOrigin);
-		}
-
-		// Get predicted positions
-		Vec3 vPredictedLocalPos = localStorage.m_bFailed ? pLocal->GetShootPos() : 
-			localStorage.m_MoveData.m_vecAbsOrigin + pLocal->m_vecViewOffset();
-		
-		// Get predicted target position (only for enemy players, buildings stay static)
-		Vec3 vPredictedTargetPos = target.Position;
-		if (bSimulateTarget)
-			vPredictedTargetPos = targetStorage.m_vPredictedOrigin;
-
-		// Check if we can hit from predicted position with predicted target
-		if (checkPos(vPredictedLocalPos, target.LagRecord, &vPredictedTargetPos))
-		{
-			bFoundHit = true;
-			break;
-		}
-	}
-
-	// Draw paths for visualization
-	if (CFG::Aimbot_Melee_Visualize_Prediction && CFG::Visuals_Simulation_Movement_Style > 0)
-	{
-		const float flDrawDuration = I::GlobalVars->curtime + 0.1f;
-		
-		// Draw local player path (green)
-		if (vLocalPath.size() > 1)
-			G::PathStorage.emplace_back(vLocalPath, flDrawDuration, Color_t(0, 255, 0, 255), CFG::Visuals_Simulation_Movement_Style, true);
-		
-		// Draw target path (red)
-		if (vTargetPath.size() > 1)
-			G::PathStorage.emplace_back(vTargetPath, flDrawDuration, Color_t(255, 0, 0, 255), CFG::Visuals_Simulation_Movement_Style, true);
-	}
-
-	// Restore entities
-	F::MoveSim.Restore(localStorage);
-	if (bSimulateTarget)
-		F::MoveSim.Restore(targetStorage);
-
-	return bFoundHit;
+	return false;
 }
 
 bool CAimbotMelee::GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeTarget_t& outTarget)
@@ -345,17 +241,29 @@ bool CAimbotMelee::GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeT
 				int nRecords = 0;
 				bool bHasValidLagRecords = false;
 				const bool bFakeLatencyActive = F::LagRecords->GetFakeLatency() > 0.0f;
+				
+				// Get the smack delay in ticks - we need records that will still be valid after this delay
+				const int nSmackTicks = GetSwingTime(pWeapon);
+				const float flSmackDelay = nSmackTicks * I::GlobalVars->interval_per_tick;
+				
+				// Get weapon-specific range (each melee has different range)
+				float flSwingRange = SDKUtils::AttribHookValue(pWeapon->GetSwingRange(), "melee_range_multiplier", pWeapon);
+				if (pLocal->m_flModelScale() > 1.0f)
+					flSwingRange *= pLocal->m_flModelScale();
+				
+				// Calculate max distance we could possibly hit from, accounting for movement during smack delay
+				// Local player max speed + some buffer for the target potentially moving towards us
+				const float flMaxSpeed = pLocal->TeamFortress_CalculateMaxSpeed(false);
+				const float flMovementDuringSmack = flMaxSpeed * flSmackDelay * 2.0f; // *2 for both players potentially moving
+				const float flMaxTargetDist = flSwingRange + flMovementDuringSmack + 50.0f; // 50 unit buffer
 
 				if (F::LagRecords->HasRecords(pPlayer, &nRecords))
 				{
 					// When fake latency is active: use the last 5 records (not including the very last one)
 					// Prefer middle record (3rd from end), then 2nd and 4th, then 1st and 5th
-					// Order: nRecords-3, nRecords-4, nRecords-2, nRecords-5, nRecords-1 (but skip the actual last which is nRecords)
 					if (bFakeLatencyActive)
 					{
 						// Priority order for the 5 records before the last one
-						// If nRecords = 10, we want indices: 7 (3rd from end), 6, 8, 5, 9
-						// That's: nRecords-3, nRecords-4, nRecords-2, nRecords-5, nRecords-1
 						const int priorityOffsets[] = { 3, 4, 2, 5, 1 };
 						
 						for (int offset : priorityOffsets)
@@ -367,12 +275,23 @@ bool CAimbotMelee::GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeT
 							const auto pRecord = F::LagRecords->GetRecord(pPlayer, n, true);
 							if (!pRecord || !F::LagRecords->DiffersFromCurrent(pRecord))
 								continue;
+							
+							// Check if this record will still be valid after the smack delay
+							const float flRecordAge = I::GlobalVars->curtime - pRecord->SimulationTime;
+							const float flAgeAtSmack = flRecordAge + flSmackDelay;
+							if (flAgeAtSmack > F::LagRecords->GetMaxUnlag() - 0.1f)
+								continue;
+
+							Vec3 vPos = SDKUtils::GetHitboxPosFromMatrix(pPlayer, HITBOX_BODY, const_cast<matrix3x4_t*>(pRecord->BoneMatrix));
+							const float flDistTo = vLocalPos.DistTo(vPos);
+							
+							// Skip if too far away to possibly hit even with movement
+							if (flDistTo > flMaxTargetDist)
+								continue;
 
 							bHasValidLagRecords = true;
-							Vec3 vPos = SDKUtils::GetHitboxPosFromMatrix(pPlayer, HITBOX_BODY, const_cast<matrix3x4_t*>(pRecord->BoneMatrix));
 							Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vPos);
 							const float flFOVTo = CFG::Aimbot_Melee_Sort == 0 ? Math::CalcFov(vLocalAngles, vAngleTo) : 0.0f;
-							const float flDistTo = vLocalPos.DistTo(vPos);
 
 							if (CFG::Aimbot_Melee_Sort == 0 && flFOVTo > CFG::Aimbot_Melee_FOV)
 								continue;
@@ -383,17 +302,29 @@ bool CAimbotMelee::GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeT
 					else
 					{
 						// Normal behavior when fake latency is 0: use ALL lag records
+						// but skip records that will be too old or too far by the time the smack happens
 						for (int n = 0; n <= nRecords; n++)
 						{
 							const auto pRecord = F::LagRecords->GetRecord(pPlayer, n, true);
 							if (!pRecord || !F::LagRecords->DiffersFromCurrent(pRecord))
 								continue;
+							
+							// Check if this record will still be valid after the smack delay
+							const float flRecordAge = I::GlobalVars->curtime - pRecord->SimulationTime;
+							const float flAgeAtSmack = flRecordAge + flSmackDelay;
+							if (flAgeAtSmack > F::LagRecords->GetMaxUnlag() - 0.1f)
+								continue;
+
+							Vec3 vPos = SDKUtils::GetHitboxPosFromMatrix(pPlayer, HITBOX_BODY, const_cast<matrix3x4_t*>(pRecord->BoneMatrix));
+							const float flDistTo = vLocalPos.DistTo(vPos);
+							
+							// Skip if too far away to possibly hit even with movement
+							if (flDistTo > flMaxTargetDist)
+								continue;
 
 							bHasValidLagRecords = true;
-							Vec3 vPos = SDKUtils::GetHitboxPosFromMatrix(pPlayer, HITBOX_BODY, const_cast<matrix3x4_t*>(pRecord->BoneMatrix));
 							Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vPos);
 							const float flFOVTo = CFG::Aimbot_Melee_Sort == 0 ? Math::CalcFov(vLocalAngles, vAngleTo) : 0.0f;
-							const float flDistTo = vLocalPos.DistTo(vPos);
 
 							if (CFG::Aimbot_Melee_Sort == 0 && flFOVTo > CFG::Aimbot_Melee_FOV)
 								continue;
@@ -515,7 +446,7 @@ bool CAimbotMelee::GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeT
 	{
 		auto& target = m_vecTargets[n];
 
-		if (!CanSee(pLocal, pWeapon, target))
+		if (!CanHit(pLocal, pWeapon, target))
 			continue;
 
 		outTarget = target;
@@ -525,7 +456,7 @@ bool CAimbotMelee::GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeT
 	// If no main target found, check friendly buildings (bypasses target max limit)
 	for (auto& target : vecFriendlyBuildings)
 	{
-		if (!CanSee(pLocal, pWeapon, target))
+		if (!CanHit(pLocal, pWeapon, target))
 			continue;
 
 		outTarget = target;
@@ -674,9 +605,8 @@ void CAimbotMelee::Run(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBase* pWeap
 	if (pWeapon->GetWeaponID() == TF_WEAPON_BUILDER)
 		return;
 
-	// Crouch while airborne (melee-specific config)
-	if (CFG::Aimbot_Melee_Crouch_Airborne)
-		CrouchWhileAirborne(pCmd, pLocal);
+	// NOTE: Crouch while airborne is handled globally, not in melee aimbot
+	// This prevents melee from interfering with the global crouch behavior
 
 	const bool isFiring = IsFiring(pCmd, pWeapon);
 
@@ -712,24 +642,14 @@ void CAimbotMelee::Run(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBase* pWeap
 				if (CFG::Misc_AntiCheat_Enabled)
 					return;
 
-				// Set tick_count for backtrack when the melee swing connects (bIsFiring)
-				// This matches hitscan behavior - set tick_count on the firing tick
-				if (bIsFiring && target.Entity->GetClassId() == ETFClassIds::CTFPlayer)
+				// Set tick_count for backtrack when the melee smack happens (bIsFiring)
+				// Melee has a swing delay - the hit detection happens AFTER you press attack
+				// The server checks the hit at the smack time, so we set tick_count then
+				if (bIsFiring && target.Entity->GetClassId() == ETFClassIds::CTFPlayer && target.LagRecord)
 				{
-					if (CFG::Misc_Accuracy_Improvements)
-					{
-						if (target.LagRecord)
-						{
-							pCmd->tick_count = TIME_TO_TICKS(target.SimulationTime + SDKUtils::GetLerp());
-						}
-					}
-					else
-					{
-						if (target.LagRecord)
-						{
-							pCmd->tick_count = TIME_TO_TICKS(target.SimulationTime + GetClientInterpAmount());
-						}
-					}
+					// Use the same tick_count calculation as Amalgam's melee aimbot
+					// SimulationTime + fake interp (or regular lerp if no fake interp)
+					pCmd->tick_count = TIME_TO_TICKS(target.SimulationTime) + TIME_TO_TICKS(SDKUtils::GetLerp());
 				}
 			}
 
