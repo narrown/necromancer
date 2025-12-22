@@ -344,36 +344,68 @@ bool CAimbotMelee::GetTarget(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, MeleeT
 			{
 				int nRecords = 0;
 				bool bHasValidLagRecords = false;
+				const bool bFakeLatencyActive = F::LagRecords->GetFakeLatency() > 0.0f;
 
 				if (F::LagRecords->HasRecords(pPlayer, &nRecords))
 				{
-					// When fake latency is active, only target the last 5 backtrack records
-					const bool bFakeLatencyActive = F::LagRecords->GetFakeLatency() > 0.0f;
-					const int nStartRecord = bFakeLatencyActive ? std::max(1, nRecords - 5) : 1;
-					// Never target the last 2 records - the last allowed is the 3rd from the end
-					const int nEndRecord = std::max(nStartRecord, nRecords - 2);
-
-					for (int n = nStartRecord; n < nEndRecord; n++)
+					// When fake latency is active: use the last 5 records (not including the very last one)
+					// Prefer middle record (3rd from end), then 2nd and 4th, then 1st and 5th
+					// Order: nRecords-3, nRecords-4, nRecords-2, nRecords-5, nRecords-1 (but skip the actual last which is nRecords)
+					if (bFakeLatencyActive)
 					{
-						const auto pRecord = F::LagRecords->GetRecord(pPlayer, n, true);
-						if (!pRecord || !F::LagRecords->DiffersFromCurrent(pRecord))
-							continue;
+						// Priority order for the 5 records before the last one
+						// If nRecords = 10, we want indices: 7 (3rd from end), 6, 8, 5, 9
+						// That's: nRecords-3, nRecords-4, nRecords-2, nRecords-5, nRecords-1
+						const int priorityOffsets[] = { 3, 4, 2, 5, 1 };
+						
+						for (int offset : priorityOffsets)
+						{
+							const int n = nRecords - offset;
+							if (n < 1) // Don't use record 0
+								continue;
+							
+							const auto pRecord = F::LagRecords->GetRecord(pPlayer, n, true);
+							if (!pRecord || !F::LagRecords->DiffersFromCurrent(pRecord))
+								continue;
 
-						bHasValidLagRecords = true;
-						Vec3 vPos = SDKUtils::GetHitboxPosFromMatrix(pPlayer, HITBOX_BODY, const_cast<matrix3x4_t*>(pRecord->BoneMatrix));
-						Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vPos);
-						const float flFOVTo = CFG::Aimbot_Melee_Sort == 0 ? Math::CalcFov(vLocalAngles, vAngleTo) : 0.0f;
-						const float flDistTo = vLocalPos.DistTo(vPos);
+							bHasValidLagRecords = true;
+							Vec3 vPos = SDKUtils::GetHitboxPosFromMatrix(pPlayer, HITBOX_BODY, const_cast<matrix3x4_t*>(pRecord->BoneMatrix));
+							Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vPos);
+							const float flFOVTo = CFG::Aimbot_Melee_Sort == 0 ? Math::CalcFov(vLocalAngles, vAngleTo) : 0.0f;
+							const float flDistTo = vLocalPos.DistTo(vPos);
 
-						if (CFG::Aimbot_Melee_Sort == 0 && flFOVTo > CFG::Aimbot_Melee_FOV)
-							continue;
+							if (CFG::Aimbot_Melee_Sort == 0 && flFOVTo > CFG::Aimbot_Melee_FOV)
+								continue;
 
-						m_vecTargets.emplace_back(MeleeTarget_t{ pPlayer, vPos, vAngleTo, flFOVTo, flDistTo, pRecord->SimulationTime, pRecord });
+							m_vecTargets.emplace_back(MeleeTarget_t{ pPlayer, vPos, vAngleTo, flFOVTo, flDistTo, pRecord->SimulationTime, pRecord });
+						}
+					}
+					else
+					{
+						// Normal behavior when fake latency is 0: use ALL lag records
+						for (int n = 0; n <= nRecords; n++)
+						{
+							const auto pRecord = F::LagRecords->GetRecord(pPlayer, n, true);
+							if (!pRecord || !F::LagRecords->DiffersFromCurrent(pRecord))
+								continue;
+
+							bHasValidLagRecords = true;
+							Vec3 vPos = SDKUtils::GetHitboxPosFromMatrix(pPlayer, HITBOX_BODY, const_cast<matrix3x4_t*>(pRecord->BoneMatrix));
+							Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vPos);
+							const float flFOVTo = CFG::Aimbot_Melee_Sort == 0 ? Math::CalcFov(vLocalAngles, vAngleTo) : 0.0f;
+							const float flDistTo = vLocalPos.DistTo(vPos);
+
+							if (CFG::Aimbot_Melee_Sort == 0 && flFOVTo > CFG::Aimbot_Melee_FOV)
+								continue;
+
+							m_vecTargets.emplace_back(MeleeTarget_t{ pPlayer, vPos, vAngleTo, flFOVTo, flDistTo, pRecord->SimulationTime, pRecord });
+						}
 					}
 				}
 
 				// Fallback: if no valid lag records exist that differ from current (enemy standing still), target the real model position
-				if (!bHasValidLagRecords)
+				// Skip this when fake latency is active - only use lag records
+				if (!bHasValidLagRecords && !bFakeLatencyActive)
 				{
 					Vec3 vPos = pPlayer->GetHitboxPos(HITBOX_BODY);
 					Vec3 vAngleTo = Math::CalcAngle(vLocalPos, vPos);
@@ -680,23 +712,23 @@ void CAimbotMelee::Run(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBase* pWeap
 				if (CFG::Misc_AntiCheat_Enabled)
 					return;
 
-				// Set tick_count for backtrack when attacking a player with a lag record
-				// For melee, we need to set this when the attack is initiated (IN_ATTACK pressed),
-				// not when the smack lands, because the server processes the attack command immediately
-				const bool bIsAttacking = (pCmd->buttons & IN_ATTACK) && G::bCanPrimaryAttack;
-				
-				if (CFG::Misc_Accuracy_Improvements)
+				// Set tick_count for backtrack when the melee swing connects (bIsFiring)
+				// This matches hitscan behavior - set tick_count on the firing tick
+				if (bIsFiring && target.Entity->GetClassId() == ETFClassIds::CTFPlayer)
 				{
-					if (bIsAttacking && target.Entity->GetClassId() == ETFClassIds::CTFPlayer && target.LagRecord)
+					if (CFG::Misc_Accuracy_Improvements)
 					{
-						pCmd->tick_count = TIME_TO_TICKS(target.SimulationTime + SDKUtils::GetLerp());
+						if (target.LagRecord)
+						{
+							pCmd->tick_count = TIME_TO_TICKS(target.SimulationTime + SDKUtils::GetLerp());
+						}
 					}
-				}
-				else
-				{
-					if (bIsAttacking && target.LagRecord)
+					else
 					{
-						pCmd->tick_count = TIME_TO_TICKS(target.SimulationTime + GetClientInterpAmount());
+						if (target.LagRecord)
+						{
+							pCmd->tick_count = TIME_TO_TICKS(target.SimulationTime + GetClientInterpAmount());
+						}
 					}
 				}
 			}
