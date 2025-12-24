@@ -80,3 +80,6 @@ bool IsVerobayDatabaseLoaded();
 
 // Refresh Verobay database
 void RefreshVerobayDatabase();
+
+// Dismiss Verobay alert for a player (called when viewing their profile)
+void DismissVerobayAlert(uint64_t steamID64);

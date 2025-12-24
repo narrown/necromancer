@@ -91,6 +91,7 @@ public:
 	int GetPartyCount(); // Returns number of unique parties detected
 	void ClearPlayerInfoCache();
 	void UpdatePlayerInfoFromGC(); // Update F2P and party info from GC system
+	void ForceRefreshPlayerInfo(); // Force immediate refresh (call on level init)
 };
 
 MAKE_SINGLETON_SCOPED(CEntityHelper, Entities, H);

@@ -12,14 +12,18 @@ void COutlines::Initialize()
 	if (!m_pMatGlowColor)
 	{
 		m_pMatGlowColor = I::MaterialSystem->FindMaterial("dev/glow_color", TEXTURE_GROUP_OTHER);
+		if (m_pMatGlowColor && m_pMatGlowColor->IsErrorMaterial())
+			m_pMatGlowColor = nullptr;
 	}
 
 	if (!m_pRtFullFrame)
 	{
 		m_pRtFullFrame = I::MaterialSystem->FindTexture("_rt_FullFrameFB", TEXTURE_GROUP_RENDER_TARGET);
+		if (m_pRtFullFrame && m_pRtFullFrame->IsError())
+			m_pRtFullFrame = nullptr;
 	}
 
-	if (!m_pRenderBuffer0)
+	if (!m_pRenderBuffer0 && m_pRtFullFrame)
 	{
 		m_pRenderBuffer0 = I::MaterialSystem->CreateNamedRenderTargetTextureEx(
 			"seo_outline_buffer0",
@@ -32,10 +36,11 @@ void COutlines::Initialize()
 			CREATERENDERTARGETFLAGS_HDR
 		);
 
-		m_pRenderBuffer0->IncrementReferenceCount();
+		if (m_pRenderBuffer0)
+			m_pRenderBuffer0->IncrementReferenceCount();
 	}
 
-	if (!m_pRenderBuffer1)
+	if (!m_pRenderBuffer1 && m_pRtFullFrame)
 	{
 		m_pRenderBuffer1 = I::MaterialSystem->CreateNamedRenderTargetTextureEx(
 			"seo_outline_buffer1",
@@ -48,7 +53,8 @@ void COutlines::Initialize()
 			CREATERENDERTARGETFLAGS_HDR
 		);
 
-		m_pRenderBuffer1->IncrementReferenceCount();
+		if (m_pRenderBuffer1)
+			m_pRenderBuffer1->IncrementReferenceCount();
 	}
 
 	if (!m_pMatHaloAddToScreen)
@@ -58,6 +64,8 @@ void COutlines::Initialize()
 		kv->SetString("$basetexture", "seo_outline_buffer0");
 		kv->SetString("$additive", "1");
 		m_pMatHaloAddToScreen = I::MaterialSystem->CreateMaterial("seo_outline_material", kv);
+		if (m_pMatHaloAddToScreen && m_pMatHaloAddToScreen->IsErrorMaterial())
+			m_pMatHaloAddToScreen = nullptr;
 	}
 
 	if (!m_pMatBlurX)
@@ -66,6 +74,8 @@ void COutlines::Initialize()
 		kv->SetString("$dummy", "dummy");
 		kv->SetString("$basetexture", "seo_outline_buffer0");
 		m_pMatBlurX = I::MaterialSystem->CreateMaterial("seo_outline_material_blurx", kv);
+		if (m_pMatBlurX && m_pMatBlurX->IsErrorMaterial())
+			m_pMatBlurX = nullptr;
 	}
 
 	if (!m_pMatBlurY)
@@ -74,12 +84,19 @@ void COutlines::Initialize()
 		kv->SetString("$dummy", "dummy");
 		kv->SetString("$basetexture", "seo_outline_buffer1");
 		m_pMatBlurY = I::MaterialSystem->CreateMaterial("seo_outline_material_blury", kv);
-		m_pBloomAmount = m_pMatBlurY->FindVar("$bloomamount", nullptr);
+		if (m_pMatBlurY && m_pMatBlurY->IsErrorMaterial())
+			m_pMatBlurY = nullptr;
+		
+		if (m_pMatBlurY)
+			m_pBloomAmount = m_pMatBlurY->FindVar("$bloomamount", nullptr);
 	}
 }
 
 void COutlines::DrawEntity(C_BaseEntity* pEntity, bool bModel)
 {
+	if (!pEntity)
+		return;
+
 	m_bRendering = true;
 
 	if (!bModel)
@@ -116,6 +133,10 @@ void COutlines::DrawEntity(C_BaseEntity* pEntity, bool bModel)
 
 void COutlines::RunModels()
 {
+	// Don't run if we're cleaning up
+	if (m_bCleaningUp)
+		return;
+
 	Initialize();
 
 	if (!m_mapDrawnEntities.empty())
@@ -129,6 +150,10 @@ void COutlines::RunModels()
 	
 	// Early exit if nothing is enabled - massive performance gain
 	if (!CFG::Outlines_Players_Active && !CFG::Outlines_Buildings_Active && !CFG::Outlines_World_Active)
+		return;
+
+	// Validate required materials exist
+	if (!m_pMatGlowColor || !m_pRenderBuffer0 || !m_pRenderBuffer1 || !m_pMatHaloAddToScreen)
 		return;
 
 	const int w = H::Draw->GetScreenW();
@@ -391,6 +416,10 @@ void COutlines::RunModels()
 
 void COutlines::Run()
 {
+	// Don't run if we're cleaning up
+	if (m_bCleaningUp)
+		return;
+
 	if (!CFG::Outlines_Active || I::EngineVGui->IsGameUIVisible() || F::SpyCamera->IsRendering())
 		return;
 
@@ -410,7 +439,11 @@ void COutlines::Run()
 	if (!pRC)
 		return;
 
-	if (CFG::Outlines_Style == 0)
+	// Validate required materials exist
+	if (!m_pMatGlowColor || !m_pRenderBuffer0 || !m_pRenderBuffer1 || !m_pMatHaloAddToScreen)
+		return;
+
+	if (CFG::Outlines_Style == 0 && m_pBloomAmount)
 		m_pBloomAmount->SetIntValue(CFG::Outlines_Bloom_Amount);
 
 	ShaderStencilState_t stencilStateDisable = {};
@@ -443,7 +476,7 @@ void COutlines::Run()
 	}
 	pRC->PopRenderTargetAndViewport();
 
-	if (CFG::Outlines_Style == 0)
+	if (CFG::Outlines_Style == 0 && m_pMatBlurX && m_pMatBlurY)
 	{
 		pRC->PushRenderTargetAndViewport();
 		{
@@ -514,41 +547,59 @@ void COutlines::Run()
 
 void COutlines::CleanUp()
 {
+	// Set flag first to prevent any rendering from using materials
 	m_bCleaningUp = true;
 
-	if (m_pMatHaloAddToScreen)
+	// Clear entity lists to prevent any pending renders
+	m_mapDrawnEntities.clear();
+	m_vecOutlineEntities.clear();
+
+	// Null out pointers first before decrementing references
+	// This prevents race conditions where render thread checks pointer validity
+	auto pMatHalo = m_pMatHaloAddToScreen;
+	auto pBuffer0 = m_pRenderBuffer0;
+	auto pBuffer1 = m_pRenderBuffer1;
+	auto pBlurX = m_pMatBlurX;
+	auto pBlurY = m_pMatBlurY;
+
+	m_pMatHaloAddToScreen = nullptr;
+	m_pRenderBuffer0 = nullptr;
+	m_pRenderBuffer1 = nullptr;
+	m_pMatBlurX = nullptr;
+	m_pMatBlurY = nullptr;
+	m_pBloomAmount = nullptr;
+	m_pMatGlowColor = nullptr;
+	m_pRtFullFrame = nullptr;
+
+	// Now safe to decrement references
+	if (pMatHalo)
 	{
-		m_pMatHaloAddToScreen->DecrementReferenceCount();
-		m_pMatHaloAddToScreen->DeleteIfUnreferenced();
-		m_pMatHaloAddToScreen = nullptr;
+		pMatHalo->DecrementReferenceCount();
+		pMatHalo->DeleteIfUnreferenced();
 	}
 
-	if (m_pRenderBuffer0)
+	if (pBuffer0)
 	{
-		m_pRenderBuffer0->DecrementReferenceCount();
-		m_pRenderBuffer0->DeleteIfUnreferenced();
-		m_pRenderBuffer0 = nullptr;
+		pBuffer0->DecrementReferenceCount();
+		pBuffer0->DeleteIfUnreferenced();
 	}
 
-	if (m_pRenderBuffer1)
+	if (pBuffer1)
 	{
-		m_pRenderBuffer1->DecrementReferenceCount();
-		m_pRenderBuffer1->DeleteIfUnreferenced();
-		m_pRenderBuffer1 = nullptr;
+		pBuffer1->DecrementReferenceCount();
+		pBuffer1->DeleteIfUnreferenced();
 	}
 
-	if (m_pMatBlurX)
+	if (pBlurX)
 	{
-		m_pMatBlurX->DecrementReferenceCount();
-		m_pMatBlurX->DeleteIfUnreferenced();
-		m_pMatBlurX = nullptr;
+		pBlurX->DecrementReferenceCount();
+		pBlurX->DeleteIfUnreferenced();
 	}
 
-	if (m_pMatBlurY)
+	if (pBlurY)
 	{
-		m_pMatBlurY->DecrementReferenceCount();
-		m_pMatBlurY->DeleteIfUnreferenced();
-		m_pMatBlurY = nullptr;
+		pBlurY->DecrementReferenceCount();
+		pBlurY->DeleteIfUnreferenced();
 	}
 
 	m_bCleaningUp = false;

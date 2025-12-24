@@ -14,6 +14,9 @@
 
 void CApp::Start()
 {
+	// Initialize crash handler first to catch any crashes during initialization
+	CrashHandler->Initialize();
+
 	while (!Memory::FindSignature("client.dll", "48 8B 0D ? ? ? ? 48 8B 10 48 8B 19 48 8B C8 FF 92"))
 	{
 		bUnload = GetAsyncKeyState(VK_F11) & 0x8000;
@@ -146,4 +149,7 @@ void CApp::Shutdown()
 	}
 	
 	I::CVar->ConsoleColorPrintf({ 255, 70, 70, 255 }, "[Necromancer beta] Unloaded, enjoy being a retarded legit!\n");
+
+	// Shutdown crash handler last
+	CrashHandler->Shutdown();
 }

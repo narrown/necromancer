@@ -102,7 +102,7 @@ void ProcessPendingBanAlerts()
 		const char* teamStr = bIsTeammate ? "Teammate" : "Enemy";
 
 		I::ClientModeShared->m_pChatElement->ChatPrintf(0,
-			std::format("\x1PLAYER [\x8{}{}] \x1HAS \x8{}{} BANS \x8{}ALERT! \x8{}({})",
+			std::format("\x1PLAYER [\x8{}{}\x1] HAS \x8{}{} BANS \x8{}ALERT! \x8{}({})",
 				nameColor.toHexStr(),
 				alert.playerName,
 				banColor.toHexStr(),
@@ -395,13 +395,25 @@ void CheckAllPlayersSourcebans()
 	}
 }
 
-// Helper to check if a player has sourcebans alert (not dismissed)
+// Helper to check if a player has sourcebans alert (not dismissed) or is in Vorobey database
 bool HasSourcebansAlert(uint64_t steamID64)
 {
-	std::lock_guard<std::mutex> lock(g_mtxSourcebans);
-	auto it = g_mapSourcebans.find(steamID64);
-	if (it != g_mapSourcebans.end())
-		return it->second.m_bHasBans && !it->second.m_bAlertDismissed;
+	// Check sourcebans first
+	{
+		std::lock_guard<std::mutex> lock(g_mtxSourcebans);
+		auto it = g_mapSourcebans.find(steamID64);
+		if (it != g_mapSourcebans.end() && it->second.m_bHasBans && !it->second.m_bAlertDismissed)
+			return true;
+	}
+	
+	// Also check Vorobey database
+	VerobayInfo_t verobayInfo;
+	if (GetVerobayInfo(steamID64, verobayInfo))
+	{
+		if (verobayInfo.m_bFoundInDatabase && !verobayInfo.m_bAlertDismissed)
+			return true;
+	}
+	
 	return false;
 }
 
@@ -570,4 +582,11 @@ void RefreshVerobayDatabase()
 		g_setVerobayDatabase.clear();
 	}
 	FetchVerobayDatabase();
+}
+
+// Dismiss Verobay alert for a player (called when viewing their profile)
+void DismissVerobayAlert(uint64_t steamID64)
+{
+	std::lock_guard<std::mutex> lock(g_mtxVerobay);
+	g_mapVerobayInfo[steamID64].m_bAlertDismissed = true;
 }

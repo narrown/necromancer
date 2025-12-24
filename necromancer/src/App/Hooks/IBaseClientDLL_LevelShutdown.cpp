@@ -9,13 +9,20 @@
 MAKE_HOOK(IBaseClientDLL_LevelShutdown, Memory::GetVFunc(I::BaseClientDLL, 7), void, __fastcall,
 	void* ecx)
 {
+	// Signal that we're shutting down - this will prevent rendering from using materials
+	F::Materials->CleanUp();
+	F::Outlines->CleanUp();
+
+	// Wait for render thread to finish any in-progress operations
+	// This gives the render thread time to complete before we actually destroy resources
+	Sleep(100);
+
 	CALL_ORIGINAL(ecx);
 
 	H::Entities->ClearCache();
 	H::Entities->ClearModelIndexes();
+	H::Entities->ClearPlayerInfoCache(); // Clear F2P and party cache on level change
 
-	F::Materials->CleanUp();
-	F::Outlines->CleanUp();
 	F::Paint->CleanUp();
 	F::WorldModulation->LevelShutdown();
 

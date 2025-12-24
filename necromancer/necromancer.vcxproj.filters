@@ -152,6 +152,7 @@
     <ClCompile Include="src\App\Features\Triggerbot\AutoSapper\AutoSapper.cpp" />
     <ClCompile Include="src\App\Features\Weather\Weather.cpp" />
     <ClCompile Include="src\App\Hooks\CClientScoreBoardDialog_NeedsUpdate.cpp" />
+    <ClCompile Include="src\Utils\CrashHandler\CrashHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\App\Features\Aimbot\AimbotHitscan\AimbotHitscan.h" />
@@ -369,5 +370,6 @@
     <ClInclude Include="src\App\Features\Triggerbot\AutoSapper\AutoSapper.h" />
     <ClInclude Include="src\App\Features\Weather\Weather.h" />
     <ClInclude Include="src\SDK\TF2\CTFGCClientSystem.h" />
+    <ClInclude Include="src\Utils\CrashHandler\CrashHandler.h" />
   </ItemGroup>
 </Project>

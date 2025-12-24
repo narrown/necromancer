@@ -248,6 +248,9 @@ void CMaterials::Initialize()
 
 void CMaterials::DrawEntity(C_BaseEntity* pEntity)
 {
+	if (!pEntity)
+		return;
+
 	SetModelStencilForOutlines(pEntity);
 
 	m_bRendering = true;
@@ -391,6 +394,10 @@ void CMaterials::RunLagRecords()
 
 void CMaterials::Run()
 {
+	// Don't run if we're cleaning up
+	if (m_bCleaningUp)
+		return;
+
 	Initialize();
 
 	if (!m_mapDrawnEntities.empty())
@@ -418,7 +425,8 @@ void CMaterials::Run()
 	if (!pLocal)
 		return;
 
-	m_pGlowSelfillumTint->SetVecValue(0.03f, 0.03f, 0.03f);
+	if (m_pGlowSelfillumTint)
+		m_pGlowSelfillumTint->SetVecValue(0.03f, 0.03f, 0.03f);
 
 	RunLagRecords();
 
@@ -499,7 +507,7 @@ void CMaterials::Run()
 			if (pMaterial && pMaterial != m_pGlow)
 				I::RenderView->SetColorModulation(entColor);
 
-			if (pMaterial == m_pGlow)
+			if (pMaterial == m_pGlow && m_pGlowEnvmapTint)
 				m_pGlowEnvmapTint->SetVecValue(ColorUtils::ToFloat(entColor.r), ColorUtils::ToFloat(entColor.g), ColorUtils::ToFloat(entColor.b));
 
 			DrawEntity(pPlayer);
@@ -586,7 +594,7 @@ void CMaterials::Run()
 			if (pMaterial && pMaterial != m_pGlow)
 				I::RenderView->SetColorModulation(entColor);
 
-			if (pMaterial == m_pGlow)
+			if (pMaterial == m_pGlow && m_pGlowEnvmapTint)
 				m_pGlowEnvmapTint->SetVecValue(ColorUtils::ToFloat(entColor.r), ColorUtils::ToFloat(entColor.g), ColorUtils::ToFloat(entColor.b));
 
 			DrawEntity(pBuilding);
@@ -629,7 +637,7 @@ void CMaterials::Run()
 				if (pMaterial && pMaterial != m_pGlow)
 					I::RenderView->SetColorModulation(color);
 
-				if (pMaterial == m_pGlow)
+				if (pMaterial == m_pGlow && m_pGlowEnvmapTint)
 					m_pGlowEnvmapTint->SetVecValue(ColorUtils::ToFloat(color.r), ColorUtils::ToFloat(color.g), ColorUtils::ToFloat(color.b));
 
 				DrawEntity(pEntity);
@@ -648,7 +656,7 @@ void CMaterials::Run()
 				if (pMaterial && pMaterial != m_pGlow)
 					I::RenderView->SetColorModulation(color);
 
-				if (pMaterial == m_pGlow)
+				if (pMaterial == m_pGlow && m_pGlowEnvmapTint)
 					m_pGlowEnvmapTint->SetVecValue(ColorUtils::ToFloat(color.r), ColorUtils::ToFloat(color.g), ColorUtils::ToFloat(color.b));
 
 				DrawEntity(pEntity);
@@ -667,7 +675,7 @@ void CMaterials::Run()
 				if (pMaterial && pMaterial != m_pGlow)
 					I::RenderView->SetColorModulation(color);
 
-				if (pMaterial == m_pGlow)
+				if (pMaterial == m_pGlow && m_pGlowEnvmapTint)
 					m_pGlowEnvmapTint->SetVecValue(ColorUtils::ToFloat(color.r), ColorUtils::ToFloat(color.g), ColorUtils::ToFloat(color.b));
 
 				DrawEntity(pEntity);
@@ -686,7 +694,7 @@ void CMaterials::Run()
 				if (pMaterial && pMaterial != m_pGlow)
 					I::RenderView->SetColorModulation(color);
 
-				if (pMaterial == m_pGlow)
+				if (pMaterial == m_pGlow && m_pGlowEnvmapTint)
 					m_pGlowEnvmapTint->SetVecValue(ColorUtils::ToFloat(color.r), ColorUtils::ToFloat(color.g), ColorUtils::ToFloat(color.b));
 
 				DrawEntity(pEntity);
@@ -726,7 +734,7 @@ void CMaterials::Run()
 				if (pMaterial && pMaterial != m_pGlow)
 					I::RenderView->SetColorModulation(color);
 
-				if (pMaterial == m_pGlow)
+				if (pMaterial == m_pGlow && m_pGlowEnvmapTint)
 					m_pGlowEnvmapTint->SetVecValue(ColorUtils::ToFloat(color.r), ColorUtils::ToFloat(color.g), ColorUtils::ToFloat(color.b));
 
 				DrawEntity(pEntity);
@@ -746,57 +754,73 @@ void CMaterials::Run()
 
 void CMaterials::CleanUp()
 {
+	// Set flag first to prevent any rendering from using materials
 	m_bCleaningUp = true;
 
-	if (m_pFlat)
+	// Clear entity list to prevent any pending renders
+	m_mapDrawnEntities.clear();
+
+	// Null out pointers first before decrementing references
+	// This prevents race conditions where render thread checks pointer validity
+	auto pFlat = m_pFlat;
+	auto pShaded = m_pShaded;
+	auto pGlossy = m_pGlossy;
+	auto pGlow = m_pGlow;
+	auto pPlastic = m_pPlastic;
+	auto pFlatNoInvis = m_pFlatNoInvis;
+	auto pShadedNoInvis = m_pShadedNoInvis;
+
+	m_pFlat = nullptr;
+	m_pShaded = nullptr;
+	m_pGlossy = nullptr;
+	m_pGlow = nullptr;
+	m_pPlastic = nullptr;
+	m_pFlatNoInvis = nullptr;
+	m_pShadedNoInvis = nullptr;
+	m_pGlowEnvmapTint = nullptr;
+	m_pGlowSelfillumTint = nullptr;
+
+	// Now safe to decrement references
+	if (pFlat)
 	{
-		m_pFlat->DecrementReferenceCount();
-		m_pFlat->DeleteIfUnreferenced();
-		m_pFlat = nullptr;
+		pFlat->DecrementReferenceCount();
+		pFlat->DeleteIfUnreferenced();
 	}
 
-	if (m_pShaded)
+	if (pShaded)
 	{
-		m_pShaded->DecrementReferenceCount();
-		m_pShaded->DeleteIfUnreferenced();
-		m_pShaded = nullptr;
+		pShaded->DecrementReferenceCount();
+		pShaded->DeleteIfUnreferenced();
 	}
 
-	if (m_pGlossy)
+	if (pGlossy)
 	{
-		m_pGlossy->DecrementReferenceCount();
-		m_pGlossy->DeleteIfUnreferenced();
-		m_pGlossy = nullptr;
+		pGlossy->DecrementReferenceCount();
+		pGlossy->DeleteIfUnreferenced();
 	}
 
-	if (m_pGlow)
+	if (pGlow)
 	{
-		m_pGlow->DecrementReferenceCount();
-		m_pGlow->DeleteIfUnreferenced();
-		m_pGlow = nullptr;
-		m_pGlowEnvmapTint = nullptr;
-		m_pGlowSelfillumTint = nullptr;
+		pGlow->DecrementReferenceCount();
+		pGlow->DeleteIfUnreferenced();
 	}
 
-	if (m_pPlastic)
+	if (pPlastic)
 	{
-		m_pPlastic->DecrementReferenceCount();
-		m_pPlastic->DeleteIfUnreferenced();
-		m_pPlastic = nullptr;
+		pPlastic->DecrementReferenceCount();
+		pPlastic->DeleteIfUnreferenced();
 	}
 
-	if (m_pFlatNoInvis)
+	if (pFlatNoInvis)
 	{
-		m_pFlatNoInvis->DecrementReferenceCount();
-		m_pFlatNoInvis->DeleteIfUnreferenced();
-		m_pFlatNoInvis = nullptr;
+		pFlatNoInvis->DecrementReferenceCount();
+		pFlatNoInvis->DeleteIfUnreferenced();
 	}
 
-	if (m_pShadedNoInvis)
+	if (pShadedNoInvis)
 	{
-		m_pShadedNoInvis->DecrementReferenceCount();
-		m_pShadedNoInvis->DeleteIfUnreferenced();
-		m_pShadedNoInvis = nullptr;
+		pShadedNoInvis->DecrementReferenceCount();
+		pShadedNoInvis->DeleteIfUnreferenced();
 	}
 
 	m_bCleaningUp = false;

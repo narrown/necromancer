@@ -11,6 +11,7 @@ MAKE_HOOK(IBaseClientDLL_LevelInitPostEntity, Memory::GetVFunc(I::BaseClientDLL,
 	CALL_ORIGINAL(ecx);
 
 	H::Entities->UpdateModelIndexes();
+	H::Entities->ForceRefreshPlayerInfo(); // Force refresh F2P and party info on new server
 	
 	// Reset ping reducer rates on map change
 	F::NetworkFix->ResetRates();

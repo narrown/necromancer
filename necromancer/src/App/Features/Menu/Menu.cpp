@@ -3611,9 +3611,10 @@ void CMenu::MainWindow()
 				{
 					nSelectedPlayerIndex = n;
 					MainTab = EMainTabs::PLAYER_DETAILS;
-					// Dismiss sourcebans alert when viewing profile
+					// Dismiss sourcebans and Vorobey alerts when viewing profile
 					uint64_t steamID64 = static_cast<uint64_t>(player_info.friendsID) + 0x0110000100000000ULL;
 					DismissSourcebansAlert(steamID64);
+					DismissVerobayAlert(steamID64);
 				}
 
 				m_nCursorX += m_nLastButtonW + CFG::Menu_Spacing_X;
@@ -4305,7 +4306,7 @@ void CMenu::MainWindow()
 
 		// Verobay Database section
 		m_nCursorY += CFG::Menu_Spacing_Y;
-		GroupBoxStart("Verobay Database", 450);
+		GroupBoxStart("Vorobey's Database", 450);
 		{
 			m_nCursorY += CFG::Menu_Spacing_Y;
 

@@ -452,6 +452,7 @@
     <ClCompile Include="src\App\Hooks\R_DrawSkyBox.cpp" />
     <ClCompile Include="src\SDK\TF2\bitbuf.cpp" />
     <ClCompile Include="src\SDK\TF2\netmessages.cpp" />
+    <ClCompile Include="src\Utils\CrashHandler\CrashHandler.cpp" />
     <ClCompile Include="src\Utils\Storage\Storage.cpp" />
     <ClCompile Include="src\SDK\Helpers\AimUtils\AimUtils.cpp" />
     <ClCompile Include="src\App\Features\Triggerbot\AutoVaccinator\AutoVaccinator.cpp" />
@@ -541,6 +542,7 @@
     <ClInclude Include="src\SDK\TF2\CTFGCClientSystem.h" />
     <ClInclude Include="src\SDK\TF2\iviewrender.h" />
     <ClInclude Include="src\SDK\TF2\renderutils.h" />
+    <ClInclude Include="src\Utils\CrashHandler\CrashHandler.h" />
     <ClInclude Include="src\Utils\Storage\Storage.h" />
     <ClInclude Include="src\SDK\Helpers\AimUtils\AimUtils.h" />
     <ClInclude Include="src\App\Features\Triggerbot\AutoVaccinator\AutoVaccinator.h" />

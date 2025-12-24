@@ -5,6 +5,7 @@
 #include "../../TF2/CTFPartyClient.h"
 #include "../../TF2/CTFGCClientSystem.h"
 #include "../../TF2/c_tf_playerresource.h"
+#include <set>
 
 C_TFPlayer* CEntityHelper::GetLocal()
 {
@@ -51,23 +52,38 @@ void CEntityHelper::ClearPlayerInfoCache()
 	m_nNextPartyIndex = 1;
 }
 
-// Update F2P and party info from GC system (called periodically)
+void CEntityHelper::ForceRefreshPlayerInfo()
+{
+	// Clear cache and reset the update timer to force immediate refresh
+	ClearPlayerInfoCache();
+}
+
+// Static tracking for connection state (like sourcebans g_bWasConnected)
+static bool g_bWasConnectedForPlayerInfo = false;
+static std::set<uint32_t> g_setCheckedPlayersForInfo; // Track which players we've already fetched info for
+
+// Update F2P and party info from GC system (called every frame, only checks new players)
 void CEntityHelper::UpdatePlayerInfoFromGC()
 {
-	// Only update once per second to avoid performance issues
-	static float flLastUpdate = 0.0f;
-	if (I::GlobalVars && I::GlobalVars->curtime - flLastUpdate < 1.0f)
+	if (!I::EngineClient->IsConnected())
+	{
+		// Reset when disconnected so we check again on next connect
+		if (g_bWasConnectedForPlayerInfo)
+		{
+			g_bWasConnectedForPlayerInfo = false;
+			g_setCheckedPlayersForInfo.clear();
+			ClearPlayerInfoCache();
+		}
 		return;
-	flLastUpdate = I::GlobalVars ? I::GlobalVars->curtime : 0.0f;
+	}
 
-	// Clear old data
-	ClearPlayerInfoCache();
+	g_bWasConnectedForPlayerInfo = true;
 
 	// Check if GC system is available
 	if (!I::TFGCClientSystem)
 		return;
 
-	// Temporary maps for collecting party data
+	// Collect GC data for all lobby members (this is cheap, just reading cached data)
 	std::unordered_map<uint32_t, uint64_t> mapAccountToParty;  // AccountID -> PartyID
 	std::unordered_map<uint32_t, bool> mapAccountToF2P;        // AccountID -> IsF2P
 
@@ -147,9 +163,12 @@ void CEntityHelper::UpdatePlayerInfoFromGC()
 	}
 	m_nNextPartyIndex = nPartyIndex;
 
-	// Now map account IDs to player indices
+	// Now check each player - only process new players (like sourcebans logic)
 	for (int n = 1; n <= I::EngineClient->GetMaxClients(); n++)
 	{
+		if (n == I::EngineClient->GetLocalPlayer())
+			continue;
+
 		player_info_t info;
 		if (!I::EngineClient->GetPlayerInfo(n, &info))
 			continue;
@@ -157,26 +176,35 @@ void CEntityHelper::UpdatePlayerInfoFromGC()
 		if (info.fakeplayer)
 			continue;
 
-		// Get account ID from player resource or steam ID
-		uint32_t uAccountID = 0;
-		
-		// Try to parse from GUID (format: [U:1:ACCOUNTID])
-		std::string guid = info.guid;
-		if (guid.length() > 5 && guid[0] == '[' && guid[1] == 'U')
+		if (info.friendsID == 0)
+			continue;
+
+		uint32_t uAccountID = static_cast<uint32_t>(info.friendsID);
+
+		// Skip if already checked this session (like sourcebans g_setCheckedPlayers)
+		if (g_setCheckedPlayersForInfo.count(uAccountID) > 0)
 		{
-			size_t lastColon = guid.rfind(':');
-			size_t closeBracket = guid.rfind(']');
-			if (lastColon != std::string::npos && closeBracket != std::string::npos && closeBracket > lastColon)
+			// Player already checked, but update their slot mapping in case they changed slots
+			if (!m_mapPlayerInfo.contains(n))
 			{
-				std::string accountStr = guid.substr(lastColon + 1, closeBracket - lastColon - 1);
-				try {
-					uAccountID = static_cast<uint32_t>(std::stoul(accountStr));
-				} catch (...) {}
+				// Find their cached info by account ID and copy to new slot
+				for (auto& [slot, cache] : m_mapPlayerInfo)
+				{
+					// We need to store account ID in cache to do this properly
+					// For now, just re-fetch if slot changed
+				}
+				
+				// Re-add to cache for this slot
+				PlayerInfoCache cache;
+				cache.bIsF2P = mapAccountToF2P.contains(uAccountID) ? mapAccountToF2P[uAccountID] : false;
+				cache.nPartyIndex = mapAccountToPartyIndex.contains(uAccountID) ? mapAccountToPartyIndex[uAccountID] : 0;
+				m_mapPlayerInfo[n] = cache;
 			}
+			continue;
 		}
 
-		if (!uAccountID)
-			continue;
+		// Mark as checked
+		g_setCheckedPlayersForInfo.insert(uAccountID);
 
 		// Store player info
 		PlayerInfoCache cache;
