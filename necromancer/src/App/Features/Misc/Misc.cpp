@@ -55,6 +55,34 @@ void CMisc::CrouchWhileAirborne(CUserCmd* pCmd)
 		if (pLocal->deadflag())
 			return;
 
+		// Don't crouch while projectile aimbot is actively aiming
+		// This prevents messing up the shoot position calculation
+		// G::nTargetIndex is set by aimbot when it has a valid target
+		if (G::nTargetIndex > 0)
+		{
+			// Check if we're using a projectile weapon
+			if (const auto pWeapon = H::Entities->GetWeapon())
+			{
+				switch (pWeapon->GetWeaponID())
+				{
+				case TF_WEAPON_ROCKETLAUNCHER:
+				case TF_WEAPON_ROCKETLAUNCHER_DIRECTHIT:
+				case TF_WEAPON_PARTICLE_CANNON:
+				case TF_WEAPON_GRENADELAUNCHER:
+				case TF_WEAPON_PIPEBOMBLAUNCHER:
+				case TF_WEAPON_CANNON:
+				case TF_WEAPON_FLAREGUN:
+				case TF_WEAPON_FLAREGUN_REVENGE:
+				case TF_WEAPON_COMPOUND_BOW:
+				case TF_WEAPON_CROSSBOW:
+				case TF_WEAPON_SYRINGEGUN_MEDIC:
+				case TF_WEAPON_SHOTGUN_BUILDING_RESCUE:
+					// Projectile weapon with active target - don't crouch
+					return;
+				}
+			}
+		}
+
 		// Use the same crouch logic as melee aimbot
 		F::AimbotMelee->CrouchWhileAirborne(pCmd, pLocal);
 	}

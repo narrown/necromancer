@@ -2,6 +2,7 @@
 
 #include "../../EnginePrediction/AmalgamEnginePred.h"
 #include "../../../Crits/Crits.h"
+#include "../../Ticks/Ticks.h"
 
 bool CAmalgamProjectileSimulation::GetInfoMain(C_TFPlayer* pPlayer, C_TFWeaponBase* pWeapon, Vec3 vAngles, ProjectileInfo& tProjInfo, int iFlags, float flAutoCharge)
 {
@@ -10,7 +11,16 @@ bool CAmalgamProjectileSimulation::GetInfoMain(C_TFPlayer* pPlayer, C_TFWeaponBa
 
 	static auto sv_gravity = U::ConVars.FindVar("sv_gravity");
 	float flGravity = sv_gravity->GetFloat() / 800.f;
+	
+	// Check duck state from BOTH the current command AND the player flags
+	// This handles CrouchWhileAirborne which sets IN_DUCK before FL_DUCKING is updated
 	bool bDucking = pPlayer->m_fFlags() & FL_DUCKING;
+	if (G::CurrentUserCmd && (G::CurrentUserCmd->buttons & IN_DUCK))
+	{
+		// If command has IN_DUCK and player is airborne, they will be ducking
+		if (!(pPlayer->m_fFlags() & FL_ONGROUND))
+			bDucking = true;
+	}
 
 	bool bTrace = iFlags & ProjSimEnum::Trace;
 	bool bQuick = iFlags & ProjSimEnum::Quick;
@@ -303,7 +313,8 @@ bool CAmalgamProjectileSimulation::GetInfo(C_TFPlayer* pPlayer, C_TFWeaponBase* 
 	CTraceFilterWorldAndPropsOnlyAmalgam filter = {};
 	filter.pSkip = pPlayer;  // Skip the local player in trace
 
-	Vec3 vStart = bQuick ? pPlayer->GetEyePosition() : pPlayer->GetShootPos();
+	// Use saved shoot position which accounts for predicted duck state from CrouchWhileAirborne
+	Vec3 vStart = bQuick ? pPlayer->GetEyePosition() : F::Ticks.GetShootPos();
 	Vec3 vEnd = tProjInfo.m_vPos;
 
 	SDK::TraceHull(vStart, vEnd, tProjInfo.m_vHull * -1.f, tProjInfo.m_vHull, MASK_SOLID, &filter, &trace);

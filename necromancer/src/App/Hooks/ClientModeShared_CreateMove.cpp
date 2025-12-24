@@ -225,9 +225,12 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 			}
 		}
 
-		F::Misc->CrouchWhileAirborne(pCmd);
 		F::Misc->AutoMedigun(pCmd);
 		F::Aimbot->Run(pCmd);
+		
+		// CrouchWhileAirborne runs AFTER aimbot so projectile aimbot uses correct shoot position
+		// The aimbot calculates trajectories from current eye position, then we crouch afterward
+		F::Misc->CrouchWhileAirborne(pCmd);
 		
 		// Run CritHack AFTER aimbot so it can detect aimbot-triggered attacks
 		// This is how Amalgam does it
