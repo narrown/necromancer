@@ -892,12 +892,7 @@ void CCritHack::Draw()
 	
 	nDrawY += nBarHeight + 2;
 	
-	// === ROW 3: DMG (left) and DMG TIL X (right-aligned to bar end) ===
-	// Left: Damage dealt
-	H::Draw->String(font, nLeftX, nDrawY, clrText, POS_DEFAULT,
-		std::format("DMG: {}", m_iRangedDamage).c_str());
-	
-	// Right: Damage til ban/unban - right-aligned to bar end
+	// === ROW 3: Damage til ban/unban (right-aligned to bar end) ===
 	if (m_bCritBanned)
 	{
 		H::Draw->String(font, nTextRightX, nDrawY, clrTextRed, POS_CENTERX,
@@ -908,15 +903,14 @@ void CCritHack::Draw()
 		H::Draw->String(font, nTextRightX, nDrawY, clrTextGreen, POS_CENTERX,
 			std::format("DMG: {}", static_cast<int>(std::floorf(m_flDamageTilFlip))).c_str());
 	}
-	nDrawY += nRowHeight;
 	
-	// === Optional: Desync warning ===
+	// === Optional: Desync warning (on same row, left side) ===
 	if (m_iDesyncDamage < 0)
 	{
 		H::Draw->String(font, nLeftX, nDrawY, clrTextYellow, POS_DEFAULT,
-			std::format("DESYNC: {}", m_iDesyncDamage).c_str());
-		nDrawY += nRowHeight;
+			std::format("DS: {}", m_iDesyncDamage).c_str());
 	}
+	nDrawY += nRowHeight;
 	
 	// === Optional: Debug info ===
 	if (CFG::Visuals_Crit_Indicator_Debug)
