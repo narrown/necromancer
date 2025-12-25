@@ -75,6 +75,12 @@ private:
 
 	// UI dragging
 	void Drag();
+	
+	// Smooth bar animation
+	float m_flDisplayedFillRatio = 0.f;
+	float m_flDisplayedNextCritRatio = 0.f;  // Ghost fill for next crit progress
+	int m_iLastNextCrit = 0;  // Track previous m_iNextCrit to detect shot progress
+	int m_iShotProgress = 0;  // Shots fired toward next crit
 
 public:
 	void Run(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd);

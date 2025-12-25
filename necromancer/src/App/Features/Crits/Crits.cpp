@@ -634,8 +634,10 @@ void CCritHack::Drag()
 	const int x = CFG::Visuals_Crit_Indicator_Pos_X;
 	const int y = CFG::Visuals_Crit_Indicator_Pos_Y;
 	
-	// Hover area around text
-	const bool bHovered = nMouseX > x - 100 && nMouseX < x + 100 && nMouseY > y - 40 && nMouseY < y + 40;
+	// Hitbox matches the indicator size (x,y is top-left now)
+	const int nWidth = 140;
+	const int nHeight = 50;  // Approximate total height
+	const bool bHovered = nMouseX >= x && nMouseX <= x + nWidth && nMouseY >= y && nMouseY <= y + nHeight;
 	
 	if (bHovered && H::Input->IsPressed(VK_LBUTTON))
 	{
@@ -654,7 +656,7 @@ void CCritHack::Drag()
 	}
 }
 
-// Draw crit indicator
+// Draw crit indicator - Two column flat dashboard style
 void CCritHack::Draw()
 {
 	if (!CFG::Visuals_Crit_Indicator || I::EngineClient->IsTakingScreenshot())
@@ -673,127 +675,256 @@ void CCritHack::Draw()
 		Drag();
 
 	const int x = CFG::Visuals_Crit_Indicator_Pos_X;
-	int y = CFG::Visuals_Crit_Indicator_Pos_Y;
-	const int nTall = 16;
+	const int y = CFG::Visuals_Crit_Indicator_Pos_Y;
 	
-	// Can't crit at all
-	if (!WeaponCanCrit(pWeapon, true))
+	// Layout dimensions - bar is half length, 55% taller
+	const int nWidth = 140;  // Half of original 280
+	const int nBarHeight = 16;  // 55% taller than 10
+	const int nPadding = 6;
+	const int nRowHeight = 12;  // Smaller row height for smaller text
+	
+	const auto& font = H::Fonts->Get(EFonts::ESP_SMALL);  // Use smaller font
+	
+	// Colors - no background, just outline
+	const Color_t clrOutline = {60, 60, 60, 255};
+	const Color_t clrBarBg = {40, 40, 40, 180};  // Semi-transparent background
+	const Color_t clrText = {220, 220, 220, 255};
+	const Color_t clrTextGreen = {80, 255, 120, 255};
+	const Color_t clrTextRed = {255, 80, 80, 255};
+	const Color_t clrTextYellow = {255, 180, 60, 255};
+	const Color_t clrTextCyan = {100, 255, 255, 255};
+	
+	// Get accent secondary color (with RGB support)
+	Color_t clrAccent = CFG::Menu_Accent_Secondary;
+	if (CFG::Menu_Accent_Secondary_RGB)
 	{
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {150, 150, 150, 255}, POS_CENTERXY, "NO CRITS");
-		return;
+		const float rate = CFG::Menu_Accent_Secondary_RGB_Rate;
+		clrAccent.r = static_cast<byte>(std::lround(std::cosf(I::GlobalVars->realtime * rate + 0.0f) * 127.5f + 127.5f));
+		clrAccent.g = static_cast<byte>(std::lround(std::cosf(I::GlobalVars->realtime * rate + 2.0f) * 127.5f + 127.5f));
+		clrAccent.b = static_cast<byte>(std::lround(std::cosf(I::GlobalVars->realtime * rate + 4.0f) * 127.5f + 127.5f));
 	}
 	
 	float flTickBase = TICKS_TO_TIME(pLocal->m_nTickBase());
 	
-	// Anti-cheat mode warning
-	if (CFG::Misc_AntiCheat_Enabled)
-	{
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {255, 200, 100, 255}, POS_CENTERXY, "SAFE MODE");
-		y += nTall;
-	}
+	// Calculate box position (x,y is top-left)
+	int nBoxX = x;
+	int nBoxY = y;
 	
-	// Crit boosted (Kritzkrieg, etc.)
-	if (pLocal->IsCritBoosted())
+	// Special states - compact single-line display (no background)
+	if (!WeaponCanCrit(pWeapon, true))
 	{
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {100, 255, 255, 255}, POS_CENTERXY, "CRIT BOOSTED");
+		H::Draw->String(font, nBoxX + nWidth / 2, nBoxY + nPadding + nRowHeight / 2, {150, 150, 150, 255}, POS_CENTERXY, "NO CRITS");
 		return;
 	}
 	
-	// Streaming crits
+	if (pLocal->IsCritBoosted())
+	{
+		H::Draw->OutlinedRect(nBoxX, nBoxY, nWidth, nRowHeight + nPadding * 2, clrOutline);
+		H::Draw->String(font, nBoxX + nWidth / 2, nBoxY + nPadding + nRowHeight / 2, clrTextCyan, POS_CENTERXY, "CRIT BOOSTED");
+		return;
+	}
+	
 	if (pWeapon->m_flCritTime() > flTickBase)
 	{
 		float flTime = pWeapon->m_flCritTime() - flTickBase;
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {100, 255, 255, 255}, POS_CENTERXY,
+		H::Draw->OutlinedRect(nBoxX, nBoxY, nWidth, nRowHeight + nPadding * 2, clrOutline);
+		H::Draw->String(font, nBoxX + nWidth / 2, nBoxY + nPadding + nRowHeight / 2, clrTextCyan, POS_CENTERXY, 
 			std::format("STREAMING {:.1f}s", flTime).c_str());
 		return;
 	}
 	
-	// Main crit status display
-	if (!m_bCritBanned)
+	int nLeftX = nBoxX + nPadding;
+	int nBarEndX = nBoxX + nWidth - nPadding;  // Right edge of the bar
+	int nTextRightX = nBarEndX - 20;  // Offset for right-aligned text (text center point)
+	int nDrawY = nBoxY;
+	
+	// === ROW 1: CRITS (left) and STATUS (right-aligned to bar end) ===
+	int iCrits = m_iAvailableCrits;
+	int iPotential = m_iPotentialCrits;
+	
+	// Left: CRITS: X/Y
+	H::Draw->String(font, nLeftX, nDrawY, clrText, POS_DEFAULT,
+		std::format("CRITS: {}{}/{}", iCrits, iCrits >= BUCKET_ATTEMPTS ? "+" : "", iPotential).c_str());
+	
+	// Right: Status (READY / BANNED / WAIT) - right-aligned to bar end
+	if (m_bCritBanned)
 	{
-		if (m_iPotentialCrits > 0)
+		H::Draw->String(font, nTextRightX, nDrawY, clrTextRed, POS_CENTERX, "BANNED");
+	}
+	else if (iCrits > 0)
+	{
+		if (pWeapon->IsRapidFire() && flTickBase < pWeapon->m_flLastRapidFireCritCheckTime() + 1.f)
 		{
-			if (m_iAvailableCrits > 0)
-			{
-				// Check rapid fire cooldown
-				if (!pWeapon->IsRapidFire() || flTickBase >= pWeapon->m_flLastRapidFireCritCheckTime() + 1.f)
-				{
-					// Green: Crit ready!
-					H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {100, 255, 100, 255}, POS_CENTERXY, "CRIT READY");
-				}
-				else
-				{
-					// Yellow: Rapid fire cooldown
-					float flTime = pWeapon->m_flLastRapidFireCritCheckTime() + 1.f - flTickBase;
-					H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {255, 255, 100, 255}, POS_CENTERXY,
-						std::format("WAIT {:.1f}s", flTime).c_str());
-				}
-			}
-			else
-			{
-				// Red: Need to refill bucket
-				int iShots = m_iNextCrit;
-				H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {255, 100, 100, 255}, POS_CENTERXY,
-					std::format("CRIT IN {}{} SHOT{}", iShots, iShots >= BUCKET_ATTEMPTS ? "+" : "", iShots == 1 ? "" : "S").c_str());
-			}
+			float flTime = pWeapon->m_flLastRapidFireCritCheckTime() + 1.f - flTickBase;
+			H::Draw->String(font, nTextRightX, nDrawY, clrTextYellow, POS_CENTERX, std::format("{:.1f}s", flTime).c_str());
 		}
 		else
 		{
-			// No potential crits (bucket empty)
-			H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {255, 100, 100, 255}, POS_CENTERXY, "BUCKET EMPTY");
+			H::Draw->String(font, nTextRightX, nDrawY, clrTextGreen, POS_CENTERX, "READY");
 		}
+	}
+	else if (iPotential > 0)
+	{
+		H::Draw->String(font, nTextRightX, nDrawY, clrTextYellow, POS_CENTERX, 
+			std::format("{} SHOTS", m_iNextCrit).c_str());
 	}
 	else
 	{
-		// Red: Crit banned - show damage needed to unban
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {255, 100, 100, 255}, POS_CENTERXY,
-			std::format("BANNED - {} DMG", static_cast<int>(std::ceilf(m_flDamageTilFlip))).c_str());
+		H::Draw->String(font, nTextRightX, nDrawY, clrTextRed, POS_CENTERX, "EMPTY");
 	}
-	y += nTall;
+	nDrawY += nRowHeight + 2;
 	
-	// Show available/potential crits
-	if (m_iPotentialCrits > 0)
+	// === ROW 2: Progress bar ===
+	int nBarX = nLeftX;
+	int nBarY = nDrawY;
+	int nActualBarWidth = nWidth - nPadding * 2;
+	
+	// Bar background + outline
+	H::Draw->Rect(nBarX, nBarY, nActualBarWidth, nBarHeight, clrBarBg);
+	H::Draw->OutlinedRect(nBarX, nBarY, nActualBarWidth, nBarHeight, clrOutline);
+	
+	// Calculate target fill ratio for available crits
+	float flTargetRatio = 0.f;
+	if (iPotential > 0)
+		flTargetRatio = static_cast<float>(iCrits) / static_cast<float>(iPotential);
+	
+	// Track shot progress toward next crit
+	// When m_iNextCrit decreases, we've made progress
+	if (m_iNextCrit > 0 && m_iLastNextCrit > 0)
 	{
-		int iCrits = m_iAvailableCrits;
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {200, 200, 200, 255}, POS_CENTERXY,
-			std::format("{}{} / {} CRITS", iCrits, iCrits >= BUCKET_ATTEMPTS ? "+" : "", m_iPotentialCrits).c_str());
-		y += nTall;
-		
-		// Show next crit info if we have crits but need to wait
-		if (m_iNextCrit && iCrits)
+		if (m_iNextCrit < m_iLastNextCrit)
 		{
-			int iShots = m_iNextCrit;
-			H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {180, 180, 180, 255}, POS_CENTERXY,
-				std::format("NEXT IN {} SHOT{}", iShots, iShots == 1 ? "" : "S").c_str());
-			y += nTall;
+			// Shot was fired, increase progress
+			m_iShotProgress += (m_iLastNextCrit - m_iNextCrit);
+		}
+		else if (m_iNextCrit > m_iLastNextCrit)
+		{
+			// Next crit requirement increased (maybe weapon switch), reset progress
+			m_iShotProgress = 0;
+		}
+	}
+	if (m_iNextCrit == 0)
+	{
+		// We have a crit available, reset progress
+		m_iShotProgress = 0;
+	}
+	m_iLastNextCrit = m_iNextCrit;
+	
+	// Calculate ghost fill ratio (progress toward next crit)
+	float flGhostTargetRatio = 0.f;
+	if (iPotential > 0 && m_iNextCrit > 0)
+	{
+		// Ghost fill shows the "next crit" slot being filled
+		int iTotalShotsNeeded = m_iNextCrit + m_iShotProgress;
+		if (iTotalShotsNeeded > 0)
+		{
+			float flProgress = static_cast<float>(m_iShotProgress) / static_cast<float>(iTotalShotsNeeded);
+			// Ghost fill is one crit slot ahead of current
+			float flOneSlot = 1.0f / static_cast<float>(iPotential);
+			flGhostTargetRatio = flTargetRatio + flOneSlot * flProgress;
 		}
 	}
 	
-	// Show damage until ban (if not banned)
-	if (m_flDamageTilFlip > 0.f && !m_bCritBanned)
+	// Smooth animation - lerp toward target
+	float flDeltaTime = I::GlobalVars->frametime;
+	float flLerpSpeed = 8.0f;
+	m_flDisplayedFillRatio += (flTargetRatio - m_flDisplayedFillRatio) * std::min(flDeltaTime * flLerpSpeed, 1.0f);
+	m_flDisplayedNextCritRatio += (flGhostTargetRatio - m_flDisplayedNextCritRatio) * std::min(flDeltaTime * flLerpSpeed, 1.0f);
+	
+	// Snap to target when very close
+	if (std::fabsf(flTargetRatio - m_flDisplayedFillRatio) < 0.01f)
+		m_flDisplayedFillRatio = flTargetRatio;
+	if (std::fabsf(flGhostTargetRatio - m_flDisplayedNextCritRatio) < 0.01f)
+		m_flDisplayedNextCritRatio = flGhostTargetRatio;
+	
+	// Clamp to valid range
+	m_flDisplayedFillRatio = std::clamp(m_flDisplayedFillRatio, 0.0f, 1.0f);
+	m_flDisplayedNextCritRatio = std::clamp(m_flDisplayedNextCritRatio, 0.0f, 1.0f);
+	
+	int nInnerWidth = nActualBarWidth - 2;
+	int nFillX = nBarX + 1;
+	int nFillY = nBarY + 1;
+	int nFillHeight = nBarHeight - 2;
+	
+	// Draw ghost fill first (transparent, shows progress toward next crit)
+	int nGhostWidth = static_cast<int>(m_flDisplayedNextCritRatio * nInnerWidth);
+	if (nGhostWidth > 0 && m_iNextCrit > 0)
 	{
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {100, 255, 100, 255}, POS_CENTERXY,
-			std::format("{} DMG TIL BAN", static_cast<int>(std::floorf(m_flDamageTilFlip))).c_str());
-		y += nTall;
+		Color_t clrGhost = {clrAccent.r, clrAccent.g, clrAccent.b, 80};  // Transparent
+		H::Draw->Rect(nFillX, nFillY, nGhostWidth, nFillHeight, clrGhost);
 	}
 	
-	// Show desync warning if damage tracking is off (only show negative desync)
+	// Draw solid fill on top (available crits)
+	int nFillWidth = (m_flDisplayedFillRatio >= 1.0f) ? nInnerWidth : static_cast<int>(m_flDisplayedFillRatio * nInnerWidth);
+	if (nFillWidth > 0)
+	{
+		// 3D-like gradient: draw multiple strips for smooth vertical gradient
+		for (int row = 0; row < nFillHeight; row++)
+		{
+			float flVertRatio = static_cast<float>(row) / static_cast<float>(nFillHeight - 1);
+			
+			// Create 3D effect: bright highlight at top, base color in middle, darker at bottom
+			float flBrightness;
+			if (flVertRatio < 0.3f)
+				flBrightness = 1.4f - (flVertRatio / 0.3f) * 0.4f;
+			else if (flVertRatio < 0.7f)
+				flBrightness = 1.0f;
+			else
+				flBrightness = 1.0f - ((flVertRatio - 0.7f) / 0.3f) * 0.35f;
+			
+			Color_t clrLeft = {
+				static_cast<byte>(std::clamp(static_cast<int>(clrAccent.r * flBrightness * 0.9f), 0, 255)),
+				static_cast<byte>(std::clamp(static_cast<int>(clrAccent.g * flBrightness * 0.9f), 0, 255)),
+				static_cast<byte>(std::clamp(static_cast<int>(clrAccent.b * flBrightness * 0.9f), 0, 255)),
+				255
+			};
+			
+			Color_t clrRight = {
+				static_cast<byte>(std::clamp(static_cast<int>(clrAccent.r * flBrightness), 0, 255)),
+				static_cast<byte>(std::clamp(static_cast<int>(clrAccent.g * flBrightness), 0, 255)),
+				static_cast<byte>(std::clamp(static_cast<int>(clrAccent.b * flBrightness), 0, 255)),
+				255
+			};
+			
+			H::Draw->GradientRect(nFillX, nFillY + row, nFillWidth, 1, clrLeft, clrRight, true);
+		}
+	}
+	
+	nDrawY += nBarHeight + 2;
+	
+	// === ROW 3: DMG (left) and DMG TIL X (right-aligned to bar end) ===
+	// Left: Damage dealt
+	H::Draw->String(font, nLeftX, nDrawY, clrText, POS_DEFAULT,
+		std::format("DMG: {}", m_iRangedDamage).c_str());
+	
+	// Right: Damage til ban/unban - right-aligned to bar end
+	if (m_bCritBanned)
+	{
+		H::Draw->String(font, nTextRightX, nDrawY, clrTextRed, POS_CENTERX,
+			std::format("DMG: {}", static_cast<int>(std::ceilf(m_flDamageTilFlip))).c_str());
+	}
+	else if (m_flDamageTilFlip > 0.f)
+	{
+		H::Draw->String(font, nTextRightX, nDrawY, clrTextGreen, POS_CENTERX,
+			std::format("DMG: {}", static_cast<int>(std::floorf(m_flDamageTilFlip))).c_str());
+	}
+	nDrawY += nRowHeight;
+	
+	// === Optional: Desync warning ===
 	if (m_iDesyncDamage < 0)
 	{
-		Color_t tColor = {255, 200, 100, 255};  // Yellow for negative
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, tColor, POS_CENTERXY,
-			std::format("{} DESYNC", m_iDesyncDamage).c_str());
-		y += nTall;
+		H::Draw->String(font, nLeftX, nDrawY, clrTextYellow, POS_DEFAULT,
+			std::format("DESYNC: {}", m_iDesyncDamage).c_str());
+		nDrawY += nRowHeight;
 	}
 	
-	// Debug: Show raw damage stats
+	// === Optional: Debug info ===
 	if (CFG::Visuals_Crit_Indicator_Debug)
 	{
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {150, 150, 150, 255}, POS_CENTERXY,
+		H::Draw->String(font, nLeftX, nDrawY, {150, 150, 150, 255}, POS_DEFAULT,
 			std::format("R:{} C:{} M:{}", m_iRangedDamage, m_iCritDamage, m_iMeleeDamage).c_str());
-		y += nTall;
-		H::Draw->String(H::Fonts->Get(EFonts::ESP), x, y, {150, 150, 150, 255}, POS_CENTERXY,
-			std::format("Bucket:{:.0f} Checks:{} Reqs:{}", 
-				pWeapon->m_flCritTokenBucket(), pWeapon->m_nCritChecks(), pWeapon->m_nCritSeedRequests()).c_str());
+		nDrawY += nRowHeight;
+		H::Draw->String(font, nLeftX, nDrawY, {150, 150, 150, 255}, POS_DEFAULT,
+			std::format("B:{:.0f}", pWeapon->m_flCritTokenBucket()).c_str());
 	}
 }
