@@ -628,6 +628,43 @@ namespace CFG
 	CFGVAR(Misc_Freeze_Queue, false);
 	CFGVAR(Misc_Auto_Queue, false);
 	CFGVAR(Misc_Anti_AFK, true);
+
+	// Region Selector (Force Regions)
+	CFGVAR(Exploits_Region_Selector_Active, false);
+	// North America
+	CFGVAR(Exploits_Region_ATL, false); // Atlanta
+	CFGVAR(Exploits_Region_ORD, false); // Chicago
+	CFGVAR(Exploits_Region_DFW, false); // Dallas
+	CFGVAR(Exploits_Region_LAX, false); // Los Angeles
+	CFGVAR(Exploits_Region_SEA, false); // Seattle
+	CFGVAR(Exploits_Region_IAD, false); // Virginia
+	// Europe
+	CFGVAR(Exploits_Region_AMS, false); // Amsterdam
+	CFGVAR(Exploits_Region_FRA, false); // Frankfurt
+	CFGVAR(Exploits_Region_HEL, false); // Helsinki
+	CFGVAR(Exploits_Region_LHR, false); // London
+	CFGVAR(Exploits_Region_MAD, false); // Madrid
+	CFGVAR(Exploits_Region_PAR, false); // Paris
+	CFGVAR(Exploits_Region_STO, false); // Stockholm
+	CFGVAR(Exploits_Region_VIE, false); // Vienna
+	CFGVAR(Exploits_Region_WAW, false); // Warsaw
+	// South America
+	CFGVAR(Exploits_Region_EZE, false); // Buenos Aires
+	CFGVAR(Exploits_Region_LIM, false); // Lima
+	CFGVAR(Exploits_Region_SCL, false); // Santiago
+	CFGVAR(Exploits_Region_GRU, false); // Sao Paulo
+	// Asia
+	CFGVAR(Exploits_Region_MAA, false); // Chennai
+	CFGVAR(Exploits_Region_DXB, false); // Dubai
+	CFGVAR(Exploits_Region_HKG, false); // Hong Kong
+	CFGVAR(Exploits_Region_BOM, false); // Mumbai
+	CFGVAR(Exploits_Region_SEO, false); // Seoul
+	CFGVAR(Exploits_Region_SGP, false); // Singapore
+	CFGVAR(Exploits_Region_TYO, false); // Tokyo
+	// Australia
+	CFGVAR(Exploits_Region_SYD, false); // Sydney
+	// Africa
+	CFGVAR(Exploits_Region_JNB, false); // Johannesburg
 	
 	CFGVAR(Misc_Projectile_Dodge_Enabled, false);
 	CFGVAR(Misc_Projectile_Dodge_Use_Warp, false);
@@ -747,6 +784,7 @@ namespace CFG
 	CFGVAR(Menu_GroupBox_Exploits_FakeLag, 200);
 	CFGVAR(Menu_GroupBox_Exploits_Crits, 100);
 	CFGVAR(Menu_GroupBox_Exploits_NoSpread, 201);
+	CFGVAR(Menu_GroupBox_Exploits_RegionSelector, 101);
 
 	// Aim tab
 	CFGVAR(Menu_GroupBox_Aim_General, 0);

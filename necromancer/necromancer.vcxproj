@@ -388,6 +388,7 @@
     <ClCompile Include="src\App\Hooks\CClientState_ProcessFixAngle.cpp" />
     <ClCompile Include="src\App\Hooks\CEconItemSchema_GetItemDefinition.cpp" />
     <ClCompile Include="src\App\Hooks\CTFInput_ApplyMouse.cpp" />
+    <ClCompile Include="src\App\Hooks\CTFPartyClient_RequestQueueForMatch.cpp" />
     <ClCompile Include="src\App\Hooks\CTFPlayerInventory_GetMaxItemCount.cpp" />
     <ClCompile Include="src\App\Hooks\CGameEventManager_FireEventIntern.cpp" />
     <ClCompile Include="src\App\Hooks\CMatchInviteNotification_OnTick.cpp" />
@@ -443,6 +444,7 @@
     <ClCompile Include="src\App\Hooks\IInput_GetUserCmd.cpp" />
     <ClCompile Include="src\App\Hooks\IMaterialSystem_FindTexture.cpp" />
     <ClCompile Include="src\App\Hooks\INetChannel_SendNetMsg.cpp" />
+    <ClCompile Include="src\App\Hooks\ISteamNetworkingUtils_GetPingToDataCenter.cpp" />
     <ClCompile Include="src\App\Hooks\ISurface_LockCursor.cpp" />
     <ClCompile Include="src\App\Hooks\ISurface_OnScreenSizeChanged.cpp" />
     <ClCompile Include="src\App\Hooks\IVEngineClient013_ClientCmd.cpp" />
@@ -540,6 +542,7 @@
     <ClInclude Include="src\App\Features\Triggerbot\AutoSapper\AutoSapper.h" />
     <ClInclude Include="src\App\Features\VisualUtils\Icons.h" />
     <ClInclude Include="src\App\Features\Weather\Weather.h" />
+    <ClInclude Include="src\SDK\Steam\ISteamNetworkingUtils.h" />
     <ClInclude Include="src\SDK\TF2\CTFGCClientSystem.h" />
     <ClInclude Include="src\SDK\TF2\iviewrender.h" />
     <ClInclude Include="src\SDK\TF2\renderutils.h" />

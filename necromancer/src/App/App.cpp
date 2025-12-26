@@ -92,6 +92,14 @@ void CApp::Start()
 		}
 	}
 
+	// Initialize SteamNetworkingUtils for region selector
+	if (Signatures::Get_SteamNetworkingUtils.Get())
+	{
+		// The signature points to a function that takes a pointer to store the interface
+		// Same pattern as other software: S::Get_SteamNetworkingUtils.Call<ISteamNetworkingUtils*>(&I::SteamNetworkingUtils);
+		Signatures::Get_SteamNetworkingUtils.Call<ISteamNetworkingUtils*>(&I::SteamNetworkingUtils);
+	}
+
 	H::Draw->UpdateScreenSize();
 	
 	H::Fonts->Reload();

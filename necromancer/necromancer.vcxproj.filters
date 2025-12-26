@@ -154,6 +154,8 @@
     <ClCompile Include="src\App\Features\Weather\Weather.cpp" />
     <ClCompile Include="src\App\Hooks\CClientScoreBoardDialog_NeedsUpdate.cpp" />
     <ClCompile Include="src\Utils\CrashHandler\CrashHandler.cpp" />
+    <ClCompile Include="src\App\Hooks\CTFPartyClient_RequestQueueForMatch.cpp" />
+    <ClCompile Include="src\App\Hooks\ISteamNetworkingUtils_GetPingToDataCenter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\App\Features\Aimbot\AimbotHitscan\AimbotHitscan.h" />
@@ -372,5 +374,6 @@
     <ClInclude Include="src\App\Features\Weather\Weather.h" />
     <ClInclude Include="src\SDK\TF2\CTFGCClientSystem.h" />
     <ClInclude Include="src\Utils\CrashHandler\CrashHandler.h" />
+    <ClInclude Include="src\SDK\Steam\ISteamNetworkingUtils.h" />
   </ItemGroup>
 </Project>

@@ -3187,11 +3187,13 @@ void CMenu::MainWindow()
 			auto [col2, ord2] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_FakeLag);
 			auto [col3, ord3] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_Crits);
 			auto [col4, ord4] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_NoSpread);
+			auto [col5, ord5] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_RegionSelector);
 
 			RegisterGroupBox("Exploits", "Shifting", col1, ord1, 150);
 			RegisterGroupBox("Exploits", "FakeLag", col2, ord2, 150);
 			RegisterGroupBox("Exploits", "Crithack", col3, ord3, 150);
 			RegisterGroupBox("Exploits", "No Spread", col4, ord4, 150);
+			RegisterGroupBox("Exploits", "Region Selector", col5, ord5, 150);
 			bExploitsInitialized = true;
 		}
 		
@@ -3201,6 +3203,7 @@ void CMenu::MainWindow()
 			auto [col2, ord2] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_FakeLag);
 			auto [col3, ord3] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_Crits);
 			auto [col4, ord4] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_NoSpread);
+			auto [col5, ord5] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_RegionSelector);
 			
 			if (m_mapGroupBoxes.find("Exploits_Shifting") != m_mapGroupBoxes.end()) {
 				m_mapGroupBoxes["Exploits_Shifting"].m_nColumn = col1;
@@ -3217,6 +3220,10 @@ void CMenu::MainWindow()
 			if (m_mapGroupBoxes.find("Exploits_No Spread") != m_mapGroupBoxes.end()) {
 				m_mapGroupBoxes["Exploits_No Spread"].m_nColumn = col4;
 				m_mapGroupBoxes["Exploits_No Spread"].m_nOrderInColumn = ord4;
+			}
+			if (m_mapGroupBoxes.find("Exploits_Region Selector") != m_mapGroupBoxes.end()) {
+				m_mapGroupBoxes["Exploits_Region Selector"].m_nColumn = col5;
+				m_mapGroupBoxes["Exploits_Region Selector"].m_nOrderInColumn = ord5;
 			}
 		}
 
@@ -3264,6 +3271,51 @@ void CMenu::MainWindow()
 		m_mapGroupBoxes["Exploits_No Spread"].m_fnRenderContent = [this]() {
 			CheckBox("Active", CFG::Exploits_SeedPred_Active);
 			CheckBox("Draw Indicator", CFG::Exploits_SeedPred_DrawIndicator);
+		};
+
+		m_mapGroupBoxes["Exploits_Region Selector"].m_fnRenderContent = [this]() {
+			CheckBox("Active", CFG::Exploits_Region_Selector_Active);
+			if (CFG::Exploits_Region_Selector_Active)
+			{
+				multiselect("NA Regions", RegionsNA, {
+					{ "Atlanta", CFG::Exploits_Region_ATL },
+					{ "Chicago", CFG::Exploits_Region_ORD },
+					{ "Dallas", CFG::Exploits_Region_DFW },
+					{ "Los Angeles", CFG::Exploits_Region_LAX },
+					{ "Seattle", CFG::Exploits_Region_SEA },
+					{ "Virginia", CFG::Exploits_Region_IAD }
+				});
+				multiselect("EU Regions", RegionsEU, {
+					{ "Amsterdam", CFG::Exploits_Region_AMS },
+					{ "Frankfurt", CFG::Exploits_Region_FRA },
+					{ "Helsinki", CFG::Exploits_Region_HEL },
+					{ "London", CFG::Exploits_Region_LHR },
+					{ "Madrid", CFG::Exploits_Region_MAD },
+					{ "Paris", CFG::Exploits_Region_PAR },
+					{ "Stockholm", CFG::Exploits_Region_STO },
+					{ "Vienna", CFG::Exploits_Region_VIE },
+					{ "Warsaw", CFG::Exploits_Region_WAW }
+				});
+				multiselect("SA Regions", RegionsSA, {
+					{ "Buenos Aires", CFG::Exploits_Region_EZE },
+					{ "Lima", CFG::Exploits_Region_LIM },
+					{ "Santiago", CFG::Exploits_Region_SCL },
+					{ "Sao Paulo", CFG::Exploits_Region_GRU }
+				});
+				multiselect("Asia Regions", RegionsAsia, {
+					{ "Chennai", CFG::Exploits_Region_MAA },
+					{ "Dubai", CFG::Exploits_Region_DXB },
+					{ "Hong Kong", CFG::Exploits_Region_HKG },
+					{ "Mumbai", CFG::Exploits_Region_BOM },
+					{ "Seoul", CFG::Exploits_Region_SEO },
+					{ "Singapore", CFG::Exploits_Region_SGP },
+					{ "Tokyo", CFG::Exploits_Region_TYO }
+				});
+				multiselect("Other Regions", RegionsOther, {
+					{ "Sydney", CFG::Exploits_Region_SYD },
+					{ "Johannesburg", CFG::Exploits_Region_JNB }
+				});
+			}
 		};
 
 		// Render all draggable GroupBoxes
@@ -4923,6 +4975,7 @@ void CMenu::HandleGroupBoxDrag()
 				else if (id == "Exploits_FakeLag") CFG::Menu_GroupBox_Exploits_FakeLag = configValue;
 				else if (id == "Exploits_Crithack") CFG::Menu_GroupBox_Exploits_Crits = configValue;
 				else if (id == "Exploits_No Spread") CFG::Menu_GroupBox_Exploits_NoSpread = configValue;
+				else if (id == "Exploits_Region Selector") CFG::Menu_GroupBox_Exploits_RegionSelector = configValue;
 			};
 			
 			// Save config for all boxes in the target column
