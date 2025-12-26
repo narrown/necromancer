@@ -312,6 +312,7 @@ namespace G
 {
 	inline bool bSilentAngles = false;
 	inline bool bPSilentAngles = false;
+	inline bool bChoking = false;  // Amalgam: currently choking packets
 	inline int nTargetIndex = -1;
 	inline float flAimbotFOV = 0.0f;
 	inline bool bCanPrimaryAttack = false;

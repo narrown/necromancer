@@ -13,6 +13,7 @@ class CMaterials
 
 	void DrawEntity(C_BaseEntity* pEntity);
 	void RunLagRecords();
+	void RunFakeAngle();
 
 public:
 	IMaterial* m_pFlat = nullptr;

@@ -608,6 +608,30 @@ namespace CFG
 	CFGVAR(Exploits_FakeLag_Activate_On_Sightline, false);
 	CFGVAR(Exploits_FakeLag_Max_Ticks, 12);
 
+	// Anti-Aim (uses tick shifting to show fake angles)
+	CFGVAR(Exploits_AntiAim_Enabled, false);
+	// Pitch: 0=None, 1=Up, 2=Down, 3=Zero, 4=Jitter, 5=ReverseJitter
+	CFGVAR(Exploits_AntiAim_PitchReal, 0);
+	CFGVAR(Exploits_AntiAim_PitchFake, 0); // 0=None, 1=Up, 2=Down, 3=Jitter, 4=ReverseJitter
+	// Yaw: 0=Forward, 1=Left, 2=Right, 3=Backwards, 4=Edge, 5=Jitter, 6=Spin
+	CFGVAR(Exploits_AntiAim_YawReal, 0);
+	CFGVAR(Exploits_AntiAim_YawFake, 0);
+	// YawBase: 0=View, 1=Target
+	CFGVAR(Exploits_AntiAim_RealYawBase, 0);
+	CFGVAR(Exploits_AntiAim_FakeYawBase, 0);
+	// Offsets and values
+	CFGVAR(Exploits_AntiAim_RealYawOffset, 0.0f); // -180 to 180
+	CFGVAR(Exploits_AntiAim_FakeYawOffset, 0.0f); // -180 to 180
+	CFGVAR(Exploits_AntiAim_RealYawValue, 90.0f); // For Edge/Jitter modes
+	CFGVAR(Exploits_AntiAim_FakeYawValue, -90.0f); // For Edge/Jitter modes
+	CFGVAR(Exploits_AntiAim_SpinSpeed, 15.0f); // Spin speed
+	// Options
+	CFGVAR(Exploits_AntiAim_MinWalk, true); // Prevent standing still detection
+	CFGVAR(Exploits_AntiAim_AntiOverlap, false); // Prevent real/fake overlap
+	CFGVAR(Exploits_AntiAim_InvalidShootPitch, false); // Hide pitch on shot
+	// Visuals
+	CFGVAR(Exploits_AntiAim_DrawFakeModel, true); // Draw fake angle chams
+
 	CFGVAR(Exploits_Crits_Force_Crit_Key, 0);
 	CFGVAR(Exploits_Crits_Force_Crit_Key_Melee, 0);
 	CFGVAR(Exploits_Crits_Skip_Random_Crits, true);
@@ -782,6 +806,7 @@ namespace CFG
 	// Exploits tab
 	CFGVAR(Menu_GroupBox_Exploits_Shifting, 0);
 	CFGVAR(Menu_GroupBox_Exploits_FakeLag, 200);
+	CFGVAR(Menu_GroupBox_Exploits_AntiAim, 1);
 	CFGVAR(Menu_GroupBox_Exploits_Crits, 100);
 	CFGVAR(Menu_GroupBox_Exploits_NoSpread, 201);
 	CFGVAR(Menu_GroupBox_Exploits_RegionSelector, 101);

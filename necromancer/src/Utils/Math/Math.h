@@ -67,6 +67,11 @@ namespace Math
 		v.z = 0.0f;
 	}
 
+	inline void ClampAngles(Vec2 &v) {
+		v.x = std::max(-89.0f, std::min(89.0f, NormalizeAngle(v.x)));
+		v.y = NormalizeAngle(v.y);
+	}
+
 	inline void VectorAngles(const Vec3 &forward, Vec3 &angles)
 	{
 		float tmp, yaw, pitch;

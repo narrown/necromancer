@@ -4,6 +4,7 @@
 #include "../VisualUtils/VisualUtils.h"
 #include "../LagRecords/LagRecords.h"
 #include "../SpyCamera/SpyCamera.h"
+#include "../FakeAngle/FakeAngle.h"
 
 void SetModelStencilForOutlines(C_BaseEntity* pEntity)
 {
@@ -392,11 +393,67 @@ void CMaterials::RunLagRecords()
 	I::RenderView->SetBlend(1.0f);
 }
 
+void CMaterials::RunFakeAngle()
+{
+	const auto pRenderContext = I::MaterialSystem->GetRenderContext();
+	if (!pRenderContext)
+		return;
+
+	const auto pLocal = H::Entities->GetLocal();
+	if (!pLocal || !pLocal->IsAlive())
+		return;
+
+	// Check if we should draw (bones are setup in LocalAnimations now)
+	if (!F::FakeAngle->m_bBonesSetup || !CFG::Exploits_AntiAim_DrawFakeModel)
+		return;
+	
+	// Also check the draw chams flag (set by FakeLag/PacketManip)
+	if (!F::FakeAngle->m_bDrawChams)
+		return;
+
+	// Get the cached bone data
+	auto pCachedBoneData = pLocal->GetCachedBoneData();
+	if (!pCachedBoneData || pCachedBoneData->Count() <= 0)
+		return;
+
+	// Save original bones
+	matrix3x4_t originalBones[128];
+	int boneCount = std::min(pCachedBoneData->Count(), 128);
+	memcpy(originalBones, pCachedBoneData->Base(), sizeof(matrix3x4_t) * boneCount);
+
+	// Set fake bones
+	memcpy(pCachedBoneData->Base(), F::FakeAngle->m_aBones, sizeof(matrix3x4_t) * boneCount);
+
+	// Draw the fake angle model with a semi-transparent flat material
+	m_bRenderingOriginalMat = false;
+	
+	// Use a distinct color for the fake model (cyan/teal)
+	I::RenderView->SetColorModulation(0.0f, 0.8f, 0.8f);
+	I::ModelRender->ForcedMaterialOverride(m_pFlatNoInvis);
+	I::RenderView->SetBlend(0.4f);
+
+	// Draw the model
+	m_bRendering = true;
+	const float flOldInvisibility = pLocal->m_flInvisibility();
+	pLocal->m_flInvisibility() = 0.0f;
+	pLocal->DrawModel(STUDIO_RENDER | STUDIO_NOSHADOWS);
+	pLocal->m_flInvisibility() = flOldInvisibility;
+	m_bRendering = false;
+
+	// Restore original bones
+	memcpy(pCachedBoneData->Base(), originalBones, sizeof(matrix3x4_t) * boneCount);
+
+	I::ModelRender->ForcedMaterialOverride(nullptr);
+	I::RenderView->SetBlend(1.0f);
+	I::RenderView->SetColorModulation(1.0f, 1.0f, 1.0f);
+}
+
 void CMaterials::Run()
 {
 	// Don't run if we're cleaning up
 	if (m_bCleaningUp)
 		return;
+
 
 	Initialize();
 
@@ -429,6 +486,7 @@ void CMaterials::Run()
 		m_pGlowSelfillumTint->SetVecValue(0.03f, 0.03f, 0.03f);
 
 	RunLagRecords();
+	RunFakeAngle();
 
 	auto GetMaterial = [&](int nIndex) -> IMaterial* {
 		//don't forget to change me if more materials are added!

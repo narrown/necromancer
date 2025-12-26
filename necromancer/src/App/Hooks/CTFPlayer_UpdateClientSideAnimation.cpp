@@ -1,6 +1,7 @@
 #include "../../SDK/SDK.h"
 
 #include "../Features/CFG.h"
+#include "../Features/FakeAngle/FakeAngle.h"
 
 MAKE_HOOK(CTFPlayer_UpdateClientSideAnimation, Signatures::CTFPlayer_UpdateClientSideAnimation.Get(), void, __fastcall,
 	C_TFPlayer* ecx)
@@ -18,6 +19,8 @@ MAKE_HOOK(CTFPlayer_UpdateClientSideAnimation, Signatures::CTFPlayer_UpdateClien
 						pWeapon->UpdateAllViewmodelAddons(); //credits: KGB
 					}
 
+					// Block normal animation updates for local player
+					// Animation is handled in CreateMove's LocalAnimations section
 					return;
 				}
 				CALL_ORIGINAL(ecx);

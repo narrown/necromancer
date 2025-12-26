@@ -6,42 +6,49 @@
 #include "../Features/ProjectileDodge/ProjectileDodge.h"
 #include "../Features/Misc/AntiCheatCompat/AntiCheatCompat.h"
 #include "../Features/AutoQueue/AutoQueue.h"
+#include "../Features/FakeAngle/FakeAngle.h"
 
 MAKE_SIGNATURE(CL_Move, "engine.dll", "40 55 53 48 8D AC 24 ? ? ? ? B8 ? ? ? ? E8 ? ? ? ? 48 2B E0 83 3D", 0x0);
+
+// Max ticks for the shifting system
+constexpr int MAX_SHIFT_TICKS = 22;
 
 MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 	float accumulated_extra_samples, bool bFinalTick)
 {
-	// Apply ping reducer BEFORE the lambda, just like Amalgam does
+	// Apply ping reducer BEFORE the lambda (like Amalgam)
 	F::NetworkFix->ApplyPingReducer();
 	F::NetworkFix->ApplyAutoInterp();
 	
-	// Auto-queue BEFORE tick processing (like Amalgam does)
-	// This ensures it runs even when not in-game
+	// Auto-queue BEFORE tick processing
 	F::AutoQueue->Run();
 	
-	// Calculate max ticks ONCE at the start (matching Amalgam's approach)
-	// When anti-cheat is enabled, limit to 8 ticks maximum
+	// Calculate max ticks (like Amalgam's Ticks.Move)
 	static auto sv_maxusrcmdprocessticks = I::CVar->FindVar("sv_maxusrcmdprocessticks");
-	int nMaxTicks = sv_maxusrcmdprocessticks ? sv_maxusrcmdprocessticks->GetInt() : MAX_COMMANDS;
+	int nServerMaxTicks = sv_maxusrcmdprocessticks ? sv_maxusrcmdprocessticks->GetInt() : MAX_COMMANDS;
+	
+	// Calculate effective max ticks
+	int nMaxTicks = std::min(nServerMaxTicks, MAX_SHIFT_TICKS);
 	if (CFG::Misc_AntiCheat_Enabled)
-		nMaxTicks = std::min(nMaxTicks, 8);  // Hard limit to 8 ticks when anti-cheat enabled
+		nMaxTicks = std::min(nMaxTicks, 8);
+	
+	// AMALGAM STYLE: m_iMaxShift is the max ticks we can store
+	// Anti-aim ticks are NOT subtracted here - they're handled by choking in CreateMove
+	// The tick reservation happens naturally because anti-aim chokes packets
+	int nMaxRechargeTicks = nMaxTicks;
 	
 	auto callOriginal = [&](bool bFinal)
 	{
-		// Update path storage (remove expired paths) - Amalgam style
+		// Update path storage (like Amalgam)
 		G::UpdatePathStorage();
 
 		if (CFG::Misc_Ping_Reducer)
-		{
 			F::NetworkFix->FixInputDelay(bFinal);
-		}
 
 		F::SeedPred->AskForPlayerPerf();
 
-		// Recharging is limited by nMaxTicks (which is already clamped to 8 when anti-cheat enabled)
-		// This matches Amalgam's behavior in Ticks.cpp where m_iMaxShift is clamped to 8
-		if (Shifting::nAvailableTicks < nMaxTicks)
+		// Recharging is limited by nMaxRechargeTicks (reserves ticks for anti-aim)
+		if (Shifting::nAvailableTicks < nMaxRechargeTicks)
 		{
 			if (H::Entities->GetWeapon())
 			{
@@ -56,9 +63,12 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 
 			if (Shifting::bRecharging)
 			{
-				// When anti-cheat is enabled, also limit recharging to 8 ticks max
-				// This matches Amalgam's m_iMaxShift = std::min(m_iMaxShift, 8) behavior
+				// Limit recharging based on anti-cheat and anti-aim
 				if (CFG::Misc_AntiCheat_Enabled && Shifting::nAvailableTicks >= 8)
+				{
+					Shifting::bRecharging = false;
+				}
+				else if (Shifting::nAvailableTicks >= nMaxRechargeTicks)
 				{
 					Shifting::bRecharging = false;
 				}
@@ -77,15 +87,15 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 		CALL_ORIGINAL(accumulated_extra_samples, bFinal);
 	};
 
+	// RapidFire shifting
 	if (Shifting::bRapidFireWantShift)
 	{
 		Shifting::bRapidFireWantShift = false;
 		Shifting::bShifting = true;
-		Shifting::bShiftingRapidFire = true;  // Mark as rapid fire shifting (not warp)
+		Shifting::bShiftingRapidFire = true;
 
-		// Limit ticks to nMaxTicks (already clamped to 8 when anti-cheat enabled)
 		int nTicks = std::min(CFG::Exploits_RapidFire_Ticks, nMaxTicks);
-		nTicks = std::min(nTicks, Shifting::nAvailableTicks);  // Can't use more than we have
+		nTicks = std::min(nTicks, Shifting::nAvailableTicks);
 		
 		for (int n = 0; n < nTicks; n++)
 		{
@@ -95,7 +105,6 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 
 		Shifting::bShifting = false;
 		Shifting::bShiftingRapidFire = false;
-
 		return;
 	}
 
@@ -103,15 +112,14 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 	{
 		if (!pLocal->deadflag() && !Shifting::bRecharging && !Shifting::bShifting && !Shifting::bShiftingWarp && !Shifting::bRapidFireWantShift)
 		{
-			// Check if ProjectileDodge wants to warp
+			// ProjectileDodge warp
 			if (F::ProjectileDodge->bWantWarp && Shifting::nAvailableTicks)
 			{
-				F::ProjectileDodge->bWantWarp = false; // Reset flag
+				F::ProjectileDodge->bWantWarp = false;
 				
 				Shifting::bShifting = true;
 				Shifting::bShiftingWarp = true;
 
-				// Limit ticks to nMaxTicks (already clamped to 8 when anti-cheat enabled)
 				int nTicks = std::min(Shifting::nAvailableTicks, nMaxTicks);
 
 				for (int n = 0; n < nTicks; n++)
@@ -122,11 +130,11 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 
 				Shifting::bShifting = false;
 				Shifting::bShiftingWarp = false;
-
 				return;
 			}
 			
-			if (!I::MatSystemSurface->IsCursorVisible() && !I::EngineVGui->IsGameUIVisible() && (H::Input->IsDown(CFG::Exploits_Warp_Key)))
+			// Manual warp
+			if (!I::MatSystemSurface->IsCursorVisible() && !I::EngineVGui->IsGameUIVisible() && H::Input->IsDown(CFG::Exploits_Warp_Key))
 			{
 				if (Shifting::nAvailableTicks)
 				{
@@ -136,16 +144,12 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 					if (CFG::Exploits_Warp_Mode == 0)
 					{
 						for (int n = 0; n < 2; n++)
-						{
 							callOriginal(n == 1);
-						}
-
 						Shifting::nAvailableTicks--;
 					}
 
 					if (CFG::Exploits_Warp_Mode == 1)
 					{
-						// Limit ticks to nMaxTicks (already clamped to 8 when anti-cheat enabled)
 						int nTicks = std::min(Shifting::nAvailableTicks, nMaxTicks);
 
 						for (int n = 0; n < nTicks; n++)
@@ -157,7 +161,6 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 
 					Shifting::bShifting = false;
 					Shifting::bShiftingWarp = false;
-
 					return;
 				}
 			}

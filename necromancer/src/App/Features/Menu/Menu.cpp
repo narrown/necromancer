@@ -3188,9 +3188,11 @@ void CMenu::MainWindow()
 			auto [col3, ord3] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_Crits);
 			auto [col4, ord4] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_NoSpread);
 			auto [col5, ord5] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_RegionSelector);
+			auto [col6, ord6] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_AntiAim);
 
 			RegisterGroupBox("Exploits", "Shifting", col1, ord1, 150);
 			RegisterGroupBox("Exploits", "FakeLag", col2, ord2, 150);
+			RegisterGroupBox("Exploits", "AntiAim", col6, ord6, 380);
 			RegisterGroupBox("Exploits", "Crithack", col3, ord3, 150);
 			RegisterGroupBox("Exploits", "No Spread", col4, ord4, 150);
 			RegisterGroupBox("Exploits", "Region Selector", col5, ord5, 150);
@@ -3204,6 +3206,7 @@ void CMenu::MainWindow()
 			auto [col3, ord3] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_Crits);
 			auto [col4, ord4] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_NoSpread);
 			auto [col5, ord5] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_RegionSelector);
+			auto [col6, ord6] = LoadGroupBoxPosition(CFG::Menu_GroupBox_Exploits_AntiAim);
 			
 			if (m_mapGroupBoxes.find("Exploits_Shifting") != m_mapGroupBoxes.end()) {
 				m_mapGroupBoxes["Exploits_Shifting"].m_nColumn = col1;
@@ -3212,6 +3215,10 @@ void CMenu::MainWindow()
 			if (m_mapGroupBoxes.find("Exploits_FakeLag") != m_mapGroupBoxes.end()) {
 				m_mapGroupBoxes["Exploits_FakeLag"].m_nColumn = col2;
 				m_mapGroupBoxes["Exploits_FakeLag"].m_nOrderInColumn = ord2;
+			}
+			if (m_mapGroupBoxes.find("Exploits_AntiAim") != m_mapGroupBoxes.end()) {
+				m_mapGroupBoxes["Exploits_AntiAim"].m_nColumn = col6;
+				m_mapGroupBoxes["Exploits_AntiAim"].m_nOrderInColumn = ord6;
 			}
 			if (m_mapGroupBoxes.find("Exploits_Crithack") != m_mapGroupBoxes.end()) {
 				m_mapGroupBoxes["Exploits_Crithack"].m_nColumn = col3;
@@ -3253,6 +3260,65 @@ void CMenu::MainWindow()
 				CFG::Exploits_FakeLag_Max_Ticks, 1, nMaxFakeLagTicks, 1);
 			CheckBox("Only When Moving", CFG::Exploits_FakeLag_Only_Moving);
 			CheckBox("Activate on Sightline", CFG::Exploits_FakeLag_Activate_On_Sightline);
+		};
+
+		m_mapGroupBoxes["Exploits_AntiAim"].m_fnRenderContent = [this]() {
+			CheckBox("Enabled", CFG::Exploits_AntiAim_Enabled);
+			SelectSingle("Real Pitch", CFG::Exploits_AntiAim_PitchReal, {
+				{ "None", 0 },
+				{ "Up", 1 },
+				{ "Down", 2 },
+				{ "Zero", 3 },
+				{ "Jitter", 4 },
+				{ "Reverse Jitter", 5 }
+			});
+			SelectSingle("Fake Pitch", CFG::Exploits_AntiAim_PitchFake, {
+				{ "None", 0 },
+				{ "Up", 1 },
+				{ "Down", 2 },
+				{ "Jitter", 3 },
+				{ "Reverse Jitter", 4 }
+			});
+			SelectSingle("Real Yaw", CFG::Exploits_AntiAim_YawReal, {
+				{ "Forward", 0 },
+				{ "Left", 1 },
+				{ "Right", 2 },
+				{ "Backwards", 3 },
+				{ "Edge", 4 },
+				{ "Jitter", 5 },
+				{ "Spin", 6 }
+			});
+			SelectSingle("Fake Yaw", CFG::Exploits_AntiAim_YawFake, {
+				{ "Forward", 0 },
+				{ "Left", 1 },
+				{ "Right", 2 },
+				{ "Backwards", 3 },
+				{ "Edge", 4 },
+				{ "Jitter", 5 },
+				{ "Spin", 6 }
+			});
+			SelectSingle("Real Base", CFG::Exploits_AntiAim_RealYawBase, {
+				{ "View", 0 },
+				{ "Target", 1 }
+			});
+			SelectSingle("Fake Base", CFG::Exploits_AntiAim_FakeYawBase, {
+				{ "View", 0 },
+				{ "Target", 1 }
+			});
+			SliderFloat("Real Offset", CFG::Exploits_AntiAim_RealYawOffset, -180.0f, 180.0f, 5.0f, "%.0f");
+			SliderFloat("Fake Offset", CFG::Exploits_AntiAim_FakeYawOffset, -180.0f, 180.0f, 5.0f, "%.0f");
+			// Show yaw value sliders only for Edge/Jitter modes
+			if (CFG::Exploits_AntiAim_YawReal == 4 || CFG::Exploits_AntiAim_YawReal == 5)
+				SliderFloat("Real Value", CFG::Exploits_AntiAim_RealYawValue, -180.0f, 180.0f, 5.0f, "%.0f");
+			if (CFG::Exploits_AntiAim_YawFake == 4 || CFG::Exploits_AntiAim_YawFake == 5)
+				SliderFloat("Fake Value", CFG::Exploits_AntiAim_FakeYawValue, -180.0f, 180.0f, 5.0f, "%.0f");
+			// Show spin speed only for Spin mode
+			if (CFG::Exploits_AntiAim_YawReal == 6 || CFG::Exploits_AntiAim_YawFake == 6)
+				SliderFloat("Spin Speed", CFG::Exploits_AntiAim_SpinSpeed, -30.0f, 30.0f, 1.0f, "%.0f");
+			CheckBox("Min Walk", CFG::Exploits_AntiAim_MinWalk);
+			CheckBox("Anti-Overlap", CFG::Exploits_AntiAim_AntiOverlap);
+			CheckBox("Hide Pitch on Shot", CFG::Exploits_AntiAim_InvalidShootPitch);
+			CheckBox("Draw Fake Model", CFG::Exploits_AntiAim_DrawFakeModel);
 		};
 
 		m_mapGroupBoxes["Exploits_Crithack"].m_fnRenderContent = [this]() {

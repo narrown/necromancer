@@ -17,31 +17,73 @@
 #include "../Features/amalgam_port/Ticks/Ticks.h"
 #include "../Features/amalgam_port/AmalgamCompat.h"
 
+// Local animations - Amalgam style
+// This updates the local player's animation state based on the angles we're sending
+// Only needed when choking packets to sync animations with the angles being sent
+static inline void LocalAnimations(C_TFPlayer* pLocal, CUserCmd* pCmd, bool bSendPacket)
+{
+	static std::vector<Vec3> vAngles = {};
+	vAngles.push_back(pCmd->viewangles);
+	
+	auto pAnimState = pLocal->GetAnimState();
+	if (bSendPacket && pAnimState)
+	{
+		float flOldFrametime = I::GlobalVars->frametime;
+		float flOldCurtime = I::GlobalVars->curtime;
+		I::GlobalVars->frametime = TICK_INTERVAL;
+		I::GlobalVars->curtime = TICKS_TO_TIME(pLocal->m_nTickBase());
+		
+		for (auto& vAngle : vAngles)
+		{
+			float flPitch = std::clamp(vAngle.x, -89.0f, 89.0f);
+			
+			if (pLocal->InCond(TF_COND_TAUNTING) && pLocal->m_bAllowMoveDuringTaunt())
+				pLocal->m_flTauntYaw() = vAngle.y;
+			pAnimState->m_flEyeYaw = vAngle.y;
+			pAnimState->Update(vAngle.y, flPitch);
+			pLocal->FrameAdvance(TICK_INTERVAL);
+		}
+		
+		I::GlobalVars->frametime = flOldFrametime;
+		I::GlobalVars->curtime = flOldCurtime;
+		vAngles.clear();
+		
+		// Setup fake model bones AFTER animation update (like Amalgam)
+		F::FakeAngle->SetupFakeModel(pLocal);
+	}
+}
+
+// Anti-aim packet check (like Amalgam's AntiAimCheck in PacketManip)
+// Only choke for anti-aim if we're not attacking
+static inline bool AntiAimCheck(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd)
+{
+	return F::FakeAngle->YawOn() 
+		&& F::FakeAngle->ShouldRun(pLocal, pWeapon, pCmd) 
+		&& !Shifting::bRecharging
+		&& I::ClientState->chokedcommands < F::FakeAngle->AntiAimTicks();
+}
+
 MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21), bool, __fastcall,
 	CClientModeShared* ecx, float flInputSampleTime, CUserCmd* pCmd)
 {
+	// Reset per-frame state
 	G::bSilentAngles = false;
 	G::bPSilentAngles = false;
 	G::bFiring = false;
 	G::Attacking = 0;
 	G::Throwing = false;
-	G::LastUserCmd = G::CurrentUserCmd;
+	G::LastUserCmd = G::CurrentUserCmd ? G::CurrentUserCmd : pCmd;
 	G::CurrentUserCmd = pCmd;
-	G::OriginalCmd = *pCmd;  // Store unmodified cmd
+	G::OriginalCmd = *pCmd;
 
 	if (!pCmd || !pCmd->command_number)
-	{
 		return CALL_ORIGINAL(ecx, flInputSampleTime, pCmd);
-	}
 
-	// Get the actual command from the input buffer - this is what gets sent to the server
-	// The pCmd parameter might be a copy, so we need to modify the buffer directly
 	CUserCmd* pBufferCmd = I::Input->GetUserCmd(pCmd->command_number);
 	if (!pBufferCmd)
 		pBufferCmd = pCmd;
 
-	I::Prediction->Update
-	(
+	I::Prediction->Update(
 		I::ClientState->m_nDeltaTick,
 		I::ClientState->m_nDeltaTick > 0,
 		I::ClientState->last_command_ack,
@@ -50,34 +92,28 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 
 	F::AutoVaccinator->PreventReload(pCmd);
 
-	// Run AutoVaccinator early if Always On - needs to run even during RapidFire/Shifting
+	// Run AutoVaccinator early if Always On
 	if (CFG::Triggerbot_AutoVaccinator_Always_On)
 	{
 		auto pLocalVacc = H::Entities->GetLocal();
 		auto pWeaponVacc = H::Entities->GetWeapon();
 		if (pLocalVacc && !pLocalVacc->deadflag() && pWeaponVacc)
-		{
 			F::AutoVaccinator->Run(pLocalVacc, pWeaponVacc, pCmd);
-		}
 	}
 
+	// RapidFire early exit
 	if (F::RapidFire->ShouldExitCreateMove(pCmd))
 	{
-		// During shifting, we still need to run CritHack to apply the forced command number
-		// CritHack stores the forced command on the first tick (bRapidFireWantShift)
-		// and reuses it for all shifted ticks
 		auto pLocal = H::Entities->GetLocal();
 		auto pWeapon = H::Entities->GetWeapon();
 		if (pLocal && pWeapon && !pLocal->deadflag())
 		{
-			// Get the buffer command - this is what actually gets sent to server
 			CUserCmd* pBufferCmd = I::Input->GetUserCmd(pCmd->command_number);
 			if (!pBufferCmd)
 				pBufferCmd = pCmd;
 			
 			F::CritHack->Run(pLocal, pWeapon, pBufferCmd);
 			
-			// Sync changes back to pCmd
 			if (pBufferCmd != pCmd)
 			{
 				pCmd->command_number = pBufferCmd->command_number;
@@ -91,26 +127,21 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 	if (Shifting::bRecharging)
 	{
 		if (pCmd->buttons & IN_JUMP)
-		{
 			pCmd->buttons &= ~IN_JUMP;
-		}
-
 		return CALL_ORIGINAL(ecx, flInputSampleTime, pCmd);
 	}
 
 	bool* pSendPacket = reinterpret_cast<bool*>(uintptr_t(_AddressOfReturnAddress()) + 0x128);
 
-	// OPTIMIZATION: Cache angles and movement for later restoration
+	// Cache original angles/movement for pSilent restoration
 	const Vec3 vOldAngles = pCmd->viewangles;
 	const float flOldSide = pCmd->sidemove;
 	const float flOldForward = pCmd->forwardmove;
 
-	// OPTIMIZATION: Cache entity pointers once (used multiple times below)
 	auto pLocal = H::Entities->GetLocal();
 	auto pWeapon = H::Entities->GetWeapon();
 
-	// Cache weapon capabilities (used by multiple features)
-	// Reset state at start of frame (Amalgam style)
+	// Reset state
 	G::bFiring = false;
 	G::bCanPrimaryAttack = false;
 	G::bCanSecondaryAttack = false;
@@ -120,9 +151,7 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 	{
 		G::bCanHeadshot = pWeapon->CanHeadShot(pLocal);
 		
-		// Amalgam's CheckReload trick - forces weapon to update reload state immediately
-		// This makes reload detection faster (shoot as soon as 1 bullet is loaded)
-		// WEAPON_NOCLIP = -1
+		// Amalgam's CheckReload trick
 		if (pWeapon->GetMaxClip1() != -1 && !pWeapon->m_bReloadsSingly())
 		{
 			float flOldCurtime = I::GlobalVars->curtime;
@@ -131,12 +160,10 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 			I::GlobalVars->curtime = flOldCurtime;
 		}
 		
-		// Amalgam's exact logic from UpdateInfo()
 		G::bCanPrimaryAttack = pWeapon->CanPrimaryAttack(pLocal);
 		G::bCanSecondaryAttack = pWeapon->CanSecondaryAttack(pLocal);
 		
-		// Minigun special handling - matches Amalgam's UpdateInfo()
-		// Minigun can only attack when in FIRING or SPINNING state
+		// Minigun special handling
 		if (pWeapon->GetWeaponID() == TF_WEAPON_MINIGUN)
 		{
 			int iState = pWeapon->As<C_TFMinigun>()->m_iWeaponState();
@@ -144,67 +171,56 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 				G::bCanPrimaryAttack = false;
 		}
 		
-		// Amalgam's default case logic for non-melee weapons
+		// Non-melee weapon reload state
 		if (pWeapon->GetSlot() != WEAPON_SLOT_MELEE)
 		{
 			bool bAmmo = pWeapon->HasPrimaryAmmoForShot();
 			bool bReload = pWeapon->IsInReload();
 			
-			// If no ammo, can't attack
 			if (!bAmmo)
 			{
 				G::bCanPrimaryAttack = false;
 				G::bCanSecondaryAttack = false;
 			}
 			
-			// If reloading AND has ammo AND can't attack yet -> G::bReloading = true
-			// This is the "queued attack" state
 			if (bReload && bAmmo && !G::bCanPrimaryAttack)
-			{
 				G::bReloading = true;
-			}
 		}
+		
+		G::Attacking = SDK::IsAttacking(pLocal, pWeapon, pCmd, false);
 	}
 	else
 	{
 		G::bCanHeadshot = false;
 	}
 
-	// Set G::Attacking like Amalgam does in UpdateInfo
-	// This is needed for CritHack to detect manual attacks
-	if (pLocal && pWeapon)
-	{
-		G::Attacking = SDK::IsAttacking(pLocal, pWeapon, pCmd, false);
-	}
-
-	//nTicksSinceCanFire
+	// Track ticks since can fire
 	{
 		static bool bOldCanFire = G::bCanPrimaryAttack;
-
 		if (G::bCanPrimaryAttack != bOldCanFire)
 		{
 			G::nTicksSinceCanFire = 0;
 			bOldCanFire = G::bCanPrimaryAttack;
 		}
-
 		else
 		{
 			if (G::bCanPrimaryAttack)
 				G::nTicksSinceCanFire++;
-
-			else G::nTicksSinceCanFire = 0;
+			else
+				G::nTicksSinceCanFire = 0;
 		}
 	}
-	// OPTIMIZATION: Early exit if no local player (rare but possible)
+
 	if (!pLocal)
 		return CALL_ORIGINAL(ecx, flInputSampleTime, pCmd);
 
-	// Update Amalgam Ticks - saves shoot position for projectile aimbot
+	// Update Amalgam Ticks
 	F::Ticks.SaveShootPos(reinterpret_cast<C_TFPlayer*>(pLocal));
-	
-	// Reset Amalgam AimType override each frame
 	Vars::Aimbot::General::AimType.Reset();
 
+	// ============================================
+	// AMALGAM ORDER: Misc features first
+	// ============================================
 	F::Misc->Bunnyhop(pCmd);
 	F::Misc->AutoStrafer(pCmd);
 	F::Misc->FastStop(pCmd);
@@ -217,41 +233,32 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 	F::Misc->MvmInstaRespawn();
 	F::Misc->AntiAFK(pCmd);
 	
-	// Projectile Dodge (run before aimbot so it can override movement)
+	// Projectile Dodge
 	F::ProjectileDodge->Run(pLocal, pCmd);
 
-	// FakeLag (run BEFORE aimbot so it can unchoke before simulation)
-	if (pWeapon)
-	{
-		F::FakeLag->Run(pLocal, pWeapon, pCmd, pSendPacket);
-	}
-
-	// CritHack runs early for manual shooting, but we also need to run it
-	// AFTER aimbot for aimbot-triggered shots
-
+	// ============================================
+	// AMALGAM ORDER: Engine Prediction Start
+	// ============================================
 	F::EnginePrediction->Start(pLocal, pCmd);
 	{
-		// OPTIMIZATION: Use cached pLocal instead of getting it again
+		// Choke on bhop
 		if (CFG::Misc_Choke_On_Bhop && CFG::Misc_Bunnyhop)
 		{
 			if ((pLocal->m_fFlags() & FL_ONGROUND) && !(F::EnginePrediction->flags & FL_ONGROUND))
-			{
 				*pSendPacket = false;
-			}
 		}
 
 		F::Misc->AutoMedigun(pCmd);
 		F::Aimbot->Run(pCmd);
-		
-		// CrouchWhileAirborne runs AFTER aimbot so projectile aimbot uses correct shoot position
-		// The aimbot calculates trajectories from current eye position, then we crouch afterward
 		F::Misc->CrouchWhileAirborne(pCmd);
 		
-		// Run CritHack AFTER aimbot so it can detect aimbot-triggered attacks
-		// Use pBufferCmd to modify the actual command that gets sent to the server
-		F::CritHack->Run(pLocal, pWeapon, pBufferCmd);
+		// IMPORTANT: Update G::Attacking AFTER aimbot runs
+		// Aimbot may have added IN_ATTACK, so we need to re-check
+		// This is how Amalgam does it - G::Attacking = SDK::IsAttacking(pLocal, pWeapon, pCmd, true)
+		G::Attacking = SDK::IsAttacking(pLocal, pWeapon, pCmd, true);
 		
-		// Sync the local pCmd with buffer changes (for other features that use pCmd)
+		// CritHack after aimbot
+		F::CritHack->Run(pLocal, pWeapon, pBufferCmd);
 		if (pBufferCmd != pCmd)
 		{
 			pCmd->command_number = pBufferCmd->command_number;
@@ -260,33 +267,28 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 		
 		F::Triggerbot->Run(pCmd);
 	}
-	F::EnginePrediction->End(pLocal, pCmd);
-	
-	F::Misc->AutoCallMedic();
+	// NOTE: EnginePrediction.End is called AFTER anti-aim (like Amalgam)
 
+	F::Misc->AutoCallMedic();
 	F::SeedPred->AdjustAngles(pCmd);
 
-	//nTicksTargetSame
+	// Track target same ticks
 	{
 		static int nOldTargetIndex = G::nTargetIndexEarly;
-
 		if (G::nTargetIndexEarly != nOldTargetIndex)
 		{
 			G::nTicksTargetSame = 0;
 			nOldTargetIndex = G::nTargetIndexEarly;
 		}
-
 		else
 		{
 			G::nTicksTargetSame++;
 		}
-
 		if (G::nTargetIndexEarly <= 1)
 			G::nTicksTargetSame = 0;
 	}
 
-	/* Taunt Slide */
-	// OPTIMIZATION: Use cached pLocal
+	// Taunt Slide
 	if (CFG::Misc_Taunt_Slide && pLocal)
 	{
 		if (pLocal->InCond(TF_COND_TAUNTING) && pLocal->m_bAllowMoveDuringTaunt())
@@ -295,19 +297,14 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 
 			if (H::Input->IsDown(CFG::Misc_Taunt_Spin_Key) && fabsf(CFG::Misc_Taunt_Spin_Speed))
 			{
-				float yaw{ CFG::Misc_Taunt_Spin_Speed };
-
+				float yaw = CFG::Misc_Taunt_Spin_Speed;
 				if (CFG::Misc_Taunt_Spin_Sine)
-				{
 					yaw = sinf(I::GlobalVars->curtime) * CFG::Misc_Taunt_Spin_Speed;
-				}
 
 				flYaw -= yaw;
 				flYaw = Math::NormalizeAngle(flYaw);
-
 				pCmd->viewangles.y = flYaw;
 			}
-
 			else
 			{
 				flYaw = pCmd->viewangles.y;
@@ -320,8 +317,7 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 		}
 	}
 
-	/* Warp */
-	// OPTIMIZATION: Use cached pLocal
+	// Warp exploit
 	if (CFG::Exploits_Warp_Exploit && CFG::Exploits_Warp_Mode == 1 && Shifting::bShiftingWarp && pLocal)
 	{
 		if (CFG::Exploits_Warp_Exploit == 1)
@@ -351,18 +347,38 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 		}
 	}
 
-	// Don't choke too much
-	if (I::ClientState->chokedcommands > 22)
-	{
-		*pSendPacket = true;
-	}
+	// ============================================
+	// AMALGAM ORDER: PacketManip (FakeLag + AntiAim packet check)
+	// ============================================
+	*pSendPacket = true;
+	F::FakeLag->Run(pLocal, pWeapon, pCmd, pSendPacket);
+	
+	// Anti-aim choking - ShouldRun already checks G::Attacking == 1
+	if (AntiAimCheck(pLocal, pWeapon, pCmd))
+		*pSendPacket = false;
 
+	// Prevent overchoking
+	if (I::ClientState->chokedcommands > 21)
+		*pSendPacket = true;
+
+	// ============================================
+	// AMALGAM ORDER: RapidFire/Ticks management
+	// ============================================
 	F::RapidFire->Run(pCmd, pSendPacket);
 
-	//pSilent - choke on attack frame, restore on next frame
+	// ============================================
+	// AMALGAM ORDER: AntiAim.Run
+	// ============================================
+	F::FakeAngle->Run(pCmd, pLocal, pWeapon, *pSendPacket);
+
+	// ============================================
+	// AMALGAM ORDER: EnginePrediction.End (AFTER anti-aim)
+	// ============================================
+	F::EnginePrediction->End(pLocal, pCmd);
+
+	// pSilent handling
 	{
 		static bool bWasSet = false;
-
 		if (G::bPSilentAngles)
 		{
 			*pSendPacket = false;
@@ -370,7 +386,6 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 		}
 		else
 		{
-			// Don't restore angles if regular silent angles are active (e.g., rocket jump)
 			if (bWasSet && !G::bSilentAngles)
 			{
 				*pSendPacket = true;
@@ -386,28 +401,26 @@ MAKE_HOOK(ClientModeShared_CreateMove, Memory::GetVFunc(I::ClientModeShared, 21)
 		}
 	}
 
-	// Anti-Cheat Compatibility - process command history and apply protections
-	// IMPORTANT: Run AFTER pSilent restoration so it sees the FINAL angles being sent to server
-	// This allows it to detect and fix the snap pattern after angles are restored
+	// ============================================
+	// AMALGAM ORDER: AntiCheatCompatibility
+	// ============================================
 	F::AntiCheatCompat->ProcessCommand(pCmd, pSendPacket);
 
+	// ============================================
+	// AMALGAM ORDER: LocalAnimations (at the very end)
+	// ============================================
+	LocalAnimations(pLocal, pCmd, *pSendPacket);
+
+	G::bChoking = !*pSendPacket;
 	G::nOldButtons = pCmd->buttons;
 	G::vUserCmdAngles = pCmd->viewangles;
 
-	// For silent aim: we need to send the aim angles to server but keep local view unchanged
-	// pCmd->viewangles = aim angles (sent to server)
-	// vOldAngles = original angles from start of CreateMove (local view)
+	// Silent aim handling
 	if (G::bSilentAngles || G::bPSilentAngles)
 	{
-		// Use vOldAngles which was captured at the START of CreateMove
-		// This is the player's actual view direction before aimbot modified anything
-		// DO NOT use GetViewAngles() here - it returns the modified angles!
 		Vec3 vRestoreAngles = vOldAngles;
 		I::EngineClient->SetViewAngles(vRestoreAngles);
 		I::Prediction->SetLocalViewAngles(vRestoreAngles);
-		
-		// Return false to skip engine's angle processing
-		// pCmd->viewangles still contains aim angles which get sent to server
 		return false;
 	}
 

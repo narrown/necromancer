@@ -20,22 +20,6 @@ MAKE_HOOK(CPrediction_RunCommand, Memory::GetVFunc(I::Prediction, 17), void, __f
 	CALL_ORIGINAL(ecx, player, pCmd, moveHelper);
 	F::EnginePrediction->RestorePlayers();
 
-	if (const auto pLocal = H::Entities->GetLocal())
-	{
-		//credits: KGB
-		if (CFG::Misc_Accuracy_Improvements && !pLocal->InCond(TF_COND_HALLOWEEN_KART) && !Shifting::bRecharging)
-		{
-			if (!pCmd->hasbeenpredicted && player == pLocal)
-			{
-				if (const auto pAnimState = pLocal->GetAnimState())
-				{
-					const float flOldFrameTime = I::GlobalVars->frametime;
-					I::GlobalVars->frametime = I::Prediction->m_bEnginePaused ? 0.0f : TICK_INTERVAL;
-					pAnimState->Update(G::bStartedFakeTaunt ? G::flFakeTauntStartYaw : pCmd->viewangles.y, pCmd->viewangles.x);
-					pLocal->FrameAdvance(I::GlobalVars->frametime);
-					I::GlobalVars->frametime = flOldFrameTime;
-				}
-			}
-		}
-	}
+	// NOTE: Animation updates are handled in LocalAnimations (CreateMove)
+	// Do NOT call FrameAdvance here - it causes double animation speed
 }

@@ -2,64 +2,112 @@
 #include "../CFG.h"
 #include "../Misc/Misc.h"
 #include "../Players/Players.h"
+#include "../FakeAngle/FakeAngle.h"
+#include "../amalgam_port/AmalgamCompat.h"
+
+void CFakeLag::PreserveBlastJump(C_TFPlayer* pLocal)
+{
+	m_bPreservingBlast = false;
+	
+	// Skip if auto rocket jump is active
+	if (F::Misc->m_bRJDisableFakeLag)
+		return;
+	
+	if (!pLocal->IsAlive())
+		return;
+	
+	static bool bStaticGround = true;
+	const bool bLastGround = bStaticGround;
+	const bool bCurrGround = bStaticGround = pLocal->m_hGroundEntity() != nullptr;
+	
+	if (!pLocal->InCond(TF_COND_BLASTJUMPING) || bLastGround || !bCurrGround)
+		return;
+	
+	m_bPreservingBlast = true;
+}
+
+void CFakeLag::Unduck(C_TFPlayer* pLocal, CUserCmd* pCmd)
+{
+	m_bUnducking = false;
+	
+	if (!pLocal->IsAlive())
+		return;
+	
+	if (!(pLocal->m_hGroundEntity() && IsDucking(pLocal) && !(pCmd->buttons & IN_DUCK)))
+		return;
+	
+	m_bUnducking = true;
+}
+
+void CFakeLag::Prediction(C_TFPlayer* pLocal, CUserCmd* pCmd)
+{
+	PreserveBlastJump(pLocal);
+	Unduck(pLocal, pCmd);
+}
 
 bool CFakeLag::IsAllowed(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd)
 {
-	// Don't fakelag if disabled or dead
-	if (!CFG::Exploits_FakeLag_Enabled || pLocal->deadflag())
-		return false;
-
-	// Calculate max allowed fakelag ticks based on saved DT ticks
-	// Total budget is ~24 ticks, shared between fakelag and doubletap
-	// When anti-cheat is enabled, max is clamped to 8
+	// Calculate max allowed fakelag ticks
 	static auto sv_maxusrcmdprocessticks = I::CVar->FindVar("sv_maxusrcmdprocessticks");
 	int nMaxTicks = sv_maxusrcmdprocessticks ? sv_maxusrcmdprocessticks->GetInt() : 24;
 	if (CFG::Misc_AntiCheat_Enabled)
 		nMaxTicks = std::min(nMaxTicks, 8);
 	
-	// Calculate available ticks for fakelag (total budget minus saved DT ticks)
-	int nAvailableForFakelag = nMaxTicks - Shifting::nAvailableTicks;
-	nAvailableForFakelag = std::min(nAvailableForFakelag, 21); // Hard cap at 21
-	nAvailableForFakelag = std::min(nAvailableForFakelag, CFG::Exploits_FakeLag_Max_Ticks); // User config cap
+	// Calculate max choke based on shifted ticks
+	// NOTE: Don't subtract anti-aim ticks here - anti-aim choking is handled separately in CreateMove
+	int nMaxChoke = std::min(24 - Shifting::nAvailableTicks, std::min(21, nMaxTicks));
 	
-	// If we've already choked enough, stop
-	if (I::ClientState->chokedcommands >= nAvailableForFakelag)
+	// Check basic conditions
+	if (!(CFG::Exploits_FakeLag_Enabled || m_bPreservingBlast || m_bUnducking)
+		|| I::ClientState->chokedcommands >= nMaxChoke
+		|| Shifting::bShifting || Shifting::bRecharging
+		|| !pLocal->IsAlive())
 		return false;
-
-	// Don't fakelag when actively shifting/recharging
-	if (Shifting::bShifting || Shifting::bRecharging)
+	
+	// Preserve blast jump takes priority
+	if (m_bPreservingBlast)
+	{
+		G::bPSilentAngles = true; // Prevent unchoking while grounded
+		return true;
+	}
+	
+	// Unchoke on attack
+	if (G::Attacking == 1)
 		return false;
-
+	
 	// Don't fakelag during auto rocket jump
 	if (F::Misc->m_bRJDisableFakeLag)
 		return false;
 	
-	// Don't fakelag during AutoFaN (needs to send packet immediately for jump boost)
+	// Don't fakelag during AutoFaN
 	if (F::Misc->IsAutoFaNRunning())
 		return false;
-
+	
 	// Don't fakelag with Beggar's Bazooka while charging
 	if (pWeapon && pWeapon->m_iItemDefinitionIndex() == Soldier_m_TheBeggarsBazooka 
-		&& pCmd->buttons & IN_ATTACK && !(G::nOldButtons & IN_ATTACK))
+		&& pCmd->buttons & IN_ATTACK && !(G::LastUserCmd ? G::LastUserCmd->buttons & IN_ATTACK : false))
 		return false;
-
+	
+	// Unduck handling
+	if (m_bUnducking)
+		return true;
+	
 	// Only fakelag when moving (if option enabled)
 	if (CFG::Exploits_FakeLag_Only_Moving)
 	{
-		if (pLocal->m_vecVelocity().Length2D() <= 10.f)
+		if (pLocal->m_vecVelocity().Length2D() <= 10.0f)
 			return false;
 	}
-
-	// Adaptive mode: check if we should keep choking
+	
+	// Adaptive mode: check teleport distance
 	static auto sv_lagcompensation_teleport_dist = I::CVar->FindVar("sv_lagcompensation_teleport_dist");
-	const float flMaxDist = sv_lagcompensation_teleport_dist ? sv_lagcompensation_teleport_dist->GetFloat() : 64.f;
+	const float flMaxDist = sv_lagcompensation_teleport_dist ? sv_lagcompensation_teleport_dist->GetFloat() : 64.0f;
 	const float flDistSqr = (pLocal->m_vecOrigin() - m_vLastPosition).Length2DSqr();
 	
 	// If we've moved too far, unchoke
 	if (flDistSqr >= (flMaxDist * flMaxDist))
 		return false;
-
-	// Otherwise, keep choking
+	
 	return true;
 }
 
@@ -68,7 +116,6 @@ bool CFakeLag::IsSniperThreat(C_TFPlayer* pLocal, int& outMinTicks, int& outMaxT
 	if (!CFG::Exploits_FakeLag_Activate_On_Sightline)
 		return false;
 
-	// Default intervals (will be overridden if threat found)
 	outMinTicks = 3;
 	outMaxTicks = 8;
 
@@ -81,22 +128,16 @@ bool CFakeLag::IsSniperThreat(C_TFPlayer* pLocal, int& outMinTicks, int& outMaxT
 		if (!pEnemy || pEnemy->deadflag())
 			continue;
 
-		// Check if enemy is a sniper
 		if (pEnemy->m_iClass() != TF_CLASS_SNIPER)
 			continue;
 
-		// Check if holding sniper rifle
 		const auto pWeapon = pEnemy->m_hActiveWeapon().Get()->As<C_TFWeaponBase>();
 		if (!pWeapon || pWeapon->GetSlot() != WEAPON_SLOT_PRIMARY || pWeapon->GetWeaponID() == TF_WEAPON_COMPOUND_BOW)
 			continue;
 
-		// Get player priority info
 		PlayerPriority pInfo{};
 		const bool bHasTag = F::Players->GetInfo(pEnemy->entindex(), pInfo);
 
-		// === CASE 3: CHEATER TAG ===
-		// If tagged as cheater, activate fakelag just for holding sniper rifle (no scope/visibility check)
-		// Medium to high interval (10-18 ticks)
 		if (bHasTag && pInfo.Cheater)
 		{
 			outMinTicks = 10;
@@ -104,12 +145,8 @@ bool CFakeLag::IsSniperThreat(C_TFPlayer* pLocal, int& outMinTicks, int& outMaxT
 			return true;
 		}
 
-		// === CASE 2: RETARD LEGIT TAG ===
-		// If tagged as retard legit, activate if they can see you (no scope check needed)
-		// Low to high interval (2-20 ticks)
 		if (bHasTag && pInfo.RetardLegit)
 		{
-			// Check visibility only (no scope requirement)
 			const bool bVisibleFromCenter = H::AimUtils->TraceEntityAutoDet(
 				pEntity,
 				pLocal->GetCenter(),
@@ -129,14 +166,9 @@ bool CFakeLag::IsSniperThreat(C_TFPlayer* pLocal, int& outMinTicks, int& outMaxT
 				return true;
 			}
 			
-			continue; // Skip default check for tagged players
+			continue;
 		}
 
-		// === CASE 1: DEFAULT (NO TAG) ===
-		// For untagged players, check if scoped and aiming near you
-		// Low interval (3-8 ticks)
-		
-		// Check if scoped
 		bool bZoomed = pEnemy->InCond(TF_COND_ZOOMED);
 		if (pWeapon->GetWeaponID() == TF_WEAPON_SNIPERRIFLE_CLASSIC)
 		{
@@ -146,13 +178,12 @@ bool CFakeLag::IsSniperThreat(C_TFPlayer* pLocal, int& outMinTicks, int& outMaxT
 		if (!bZoomed)
 			continue;
 
-		// Expand bounds significantly for wider detection (~50 feet)
 		auto vMins = pLocal->m_vecMins();
 		auto vMaxs = pLocal->m_vecMaxs();
 
-		vMins.x *= 6.0f;  // 6x for horizontal (very wide detection)
+		vMins.x *= 6.0f;
 		vMins.y *= 6.0f;
-		vMins.z *= 3.0f;  // 3x for vertical
+		vMins.z *= 3.0f;
 
 		vMaxs.x *= 6.0f;
 		vMaxs.y *= 6.0f;
@@ -161,11 +192,9 @@ bool CFakeLag::IsSniperThreat(C_TFPlayer* pLocal, int& outMinTicks, int& outMaxT
 		Vec3 vForward{};
 		Math::AngleVectors(pEnemy->GetEyeAngles(), &vForward);
 
-		// Check if sniper is aiming at us
 		if (!Math::RayToOBB(pEnemy->GetShootPos(), vForward, pLocal->m_vecOrigin(), vMins, vMaxs, pLocal->RenderableToWorldTransform()))
 			continue;
 
-		// Sightline detected for default player (low interval already set)
 		return true;
 	}
 
@@ -174,11 +203,25 @@ bool CFakeLag::IsSniperThreat(C_TFPlayer* pLocal, int& outMinTicks, int& outMaxT
 
 void CFakeLag::Run(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd, bool* pSendPacket)
 {
+	// Set draw chams flag (like Amalgam's PacketManip)
+	F::FakeAngle->m_bDrawChams = CFG::Exploits_FakeLag_Enabled || F::FakeAngle->AntiAimOn();
+	
+	// Default to sending packet
+	*pSendPacket = true;
+	
+	// Don't run fakelag if anti-aim yaw is on - anti-aim handles its own choking
+	// This is how Amalgam does it - FakeLag and AntiAim choking are separate
+	if (F::FakeAngle->YawOn() && F::FakeAngle->ShouldRun(pLocal, pWeapon, pCmd))
+	{
+		m_bEnabled = false;
+		return;
+	}
+	
 	// Set goal to 22 for adaptive mode
 	if (!m_iGoal)
 		m_iGoal = 22;
 	
-	// Check for new entities and force unchoke for a few ticks
+	// Check for new entities and force unchoke
 	static int nLastPlayerCount = 0;
 	int nCurrentPlayerCount = 0;
 	for (const auto pEntity : H::Entities->GetGroup(EEntGroup::PLAYERS_ENEMIES))
@@ -191,43 +234,39 @@ void CFakeLag::Run(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd, 
 	}
 	
 	if (nCurrentPlayerCount > nLastPlayerCount)
-	{
-		// New entity detected, force unchoke for 5 ticks to let records initialize properly
 		m_iNewEntityUnchokeTicks = 5;
-	}
 	nLastPlayerCount = nCurrentPlayerCount;
 	
 	if (m_iNewEntityUnchokeTicks > 0)
 	{
 		m_iNewEntityUnchokeTicks--;
-		*pSendPacket = true;
 		m_iGoal = 0;
 		m_vLastPosition = pLocal->m_vecOrigin();
 		m_bEnabled = false;
 		return;
 	}
 	
-	// If "Activate on Sightline" is enabled, use sightline-based logic
+	// Run prediction (blast jump preservation, unduck)
+	Prediction(pLocal, pCmd);
+	
+	// Sightline-based logic
 	if (CFG::Exploits_FakeLag_Activate_On_Sightline)
 	{
-		// Still respect critical safety checks even in sightline mode
-		
-		// Don't fakelag if disabled or dead
 		if (!CFG::Exploits_FakeLag_Enabled || pLocal->deadflag())
 		{
 			m_iGoal = 0;
 			m_vLastPosition = pLocal->m_vecOrigin();
 			m_bEnabled = false;
-			*pSendPacket = true;
 			return;
 		}
 		
-		// Calculate max allowed fakelag ticks based on saved DT ticks
+		// Calculate max allowed fakelag ticks
 		static auto sv_maxusrcmdprocessticks = I::CVar->FindVar("sv_maxusrcmdprocessticks");
 		int nMaxTicks = sv_maxusrcmdprocessticks ? sv_maxusrcmdprocessticks->GetInt() : 24;
 		if (CFG::Misc_AntiCheat_Enabled)
 			nMaxTicks = std::min(nMaxTicks, 8);
 		
+		// NOTE: Don't subtract anti-aim ticks here - anti-aim choking is handled separately in CreateMove
 		int nAvailableForFakelag = nMaxTicks - Shifting::nAvailableTicks;
 		nAvailableForFakelag = std::min(nAvailableForFakelag, 21);
 		nAvailableForFakelag = std::min(nAvailableForFakelag, CFG::Exploits_FakeLag_Max_Ticks);
@@ -237,41 +276,25 @@ void CFakeLag::Run(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd, 
 			m_iGoal = 0;
 			m_vLastPosition = pLocal->m_vecOrigin();
 			m_bEnabled = false;
-			*pSendPacket = true;
 			return;
 		}
 		
-		// Don't fakelag when shifting/recharging
 		if (Shifting::bShifting || Shifting::bRecharging)
 		{
 			m_iGoal = 0;
 			m_vLastPosition = pLocal->m_vecOrigin();
 			m_bEnabled = false;
-			*pSendPacket = true;
 			return;
 		}
 		
-		// Don't fakelag during auto rocket jump
-		if (F::Misc->m_bRJDisableFakeLag)
+		if (F::Misc->m_bRJDisableFakeLag || F::Misc->IsAutoFaNRunning())
 		{
 			m_iGoal = 0;
 			m_vLastPosition = pLocal->m_vecOrigin();
 			m_bEnabled = false;
-			*pSendPacket = true;
 			return;
 		}
 		
-		// Don't fakelag during AutoFaN
-		if (F::Misc->IsAutoFaNRunning())
-		{
-			m_iGoal = 0;
-			m_vLastPosition = pLocal->m_vecOrigin();
-			m_bEnabled = false;
-			*pSendPacket = true;
-			return;
-		}
-		
-		// Now check for sniper threat
 		int nMinTicks = 3;
 		int nMaxTicksSightline = 8;
 		if (!IsSniperThreat(pLocal, nMinTicks, nMaxTicksSightline))
@@ -281,20 +304,15 @@ void CFakeLag::Run(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd, 
 			m_iTargetChokeTicks = 0;
 			m_vLastPosition = pLocal->m_vecOrigin();
 			m_bEnabled = false;
-			*pSendPacket = true;
 			return;
 		}
 		
-		// Sniper threat detected and all safety checks passed, enable fakelag with random interval
-		
-		// Generate new random target if we've reached the current target or just started
 		if (m_iCurrentChokeTicks >= m_iTargetChokeTicks || m_iTargetChokeTicks == 0)
 		{
 			m_iTargetChokeTicks = nMinTicks + (rand() % (nMaxTicksSightline - nMinTicks + 1));
 			m_iCurrentChokeTicks = 0;
 		}
 		
-		// Choke until we reach target
 		if (m_iCurrentChokeTicks < m_iTargetChokeTicks)
 		{
 			*pSendPacket = false;
@@ -302,8 +320,6 @@ void CFakeLag::Run(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd, 
 		}
 		else
 		{
-			// Reached target, send packet and reset
-			*pSendPacket = true;
 			m_iCurrentChokeTicks = 0;
 		}
 		
