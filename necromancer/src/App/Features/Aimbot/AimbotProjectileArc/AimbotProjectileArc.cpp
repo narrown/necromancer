@@ -617,7 +617,9 @@ void CAimbotProjectileArc::Run(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBas
 	if (CFG::Aimbot_Projectile_Sort == 0)
 		G::flAimbotFOV = CFG::Aimbot_Projectile_FOV;
 
-	if (Shifting::bShifting && !Shifting::bShiftingWarp)
+	// Allow aimbot to run during rapid fire shifting to recalculate angles for each tick
+	// Skip only during warp shifting (not rapid fire)
+	if (Shifting::bShifting && !Shifting::bShiftingRapidFire)
 		return;
 
 	const int nWeaponID = pWeapon->GetWeaponID();

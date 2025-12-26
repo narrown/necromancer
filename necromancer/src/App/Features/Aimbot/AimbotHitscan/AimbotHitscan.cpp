@@ -632,6 +632,15 @@ void CAimbotHitscan::Aim(CUserCmd* pCmd, C_TFPlayer* pLocal, const Vec3& vAngles
 	Vec3 vAngleTo = vAngles - pLocal->m_vecPunchAngle();
 	Math::ClampAngles(vAngleTo);
 
+	// During rapid fire shifting, always use silent aim to set angles for each tick
+	if (Shifting::bShiftingRapidFire)
+	{
+		H::AimUtils->FixMovement(pCmd, vAngleTo);
+		pCmd->viewangles = vAngleTo;
+		G::bSilentAngles = true;
+		return;
+	}
+
 	switch (CFG::Aimbot_Hitscan_Aim_Type)
 	{
 		// Plain
@@ -940,27 +949,36 @@ void CAimbotHitscan::Run(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBase* pWe
 	if (CFG::Aimbot_Hitscan_Sort == 0)
 		G::flAimbotFOV = CFG::Aimbot_Hitscan_FOV;
 
-	if (Shifting::bShifting && !Shifting::bShiftingWarp)
+	// Allow aimbot to run during rapid fire shifting to recalculate angles for each tick
+	// Skip only during warp shifting (not rapid fire)
+	if (Shifting::bShifting && !Shifting::bShiftingRapidFire)
 		return;
 
-	const bool isFiring = IsFiring(pCmd, pWeapon);
+	// During rapid fire shifting, we're always firing
+	const bool bRapidFireShifting = Shifting::bShiftingRapidFire;
+	const bool isFiring = bRapidFireShifting ? true : IsFiring(pCmd, pWeapon);
 
 	HitscanTarget_t target = {};
 	if (GetTarget(pLocal, pWeapon, target) && target.Entity)
 	{
 		G::nTargetIndexEarly = target.Entity->entindex();
 
-		const auto aimKeyDown = H::Input->IsDown(CFG::Aimbot_Key);
+		// During rapid fire shifting, always aim at target
+		const auto aimKeyDown = H::Input->IsDown(CFG::Aimbot_Key) || bRapidFireShifting;
 		if (aimKeyDown || isFiring)
 		{
 			G::nTargetIndex = target.Entity->entindex();
 
-			// Auto Scope
-			if (CFG::Aimbot_Hitscan_Auto_Scope
-				&& !pLocal->IsZoomed() && pLocal->m_iClass() == TF_CLASS_SNIPER && pWeapon->GetSlot() == WEAPON_SLOT_PRIMARY && G::bCanPrimaryAttack)
+			// Skip auto scope during rapid fire shifting
+			if (!bRapidFireShifting)
 			{
-				pCmd->buttons |= IN_ATTACK2;
-				return;
+				// Auto Scope
+				if (CFG::Aimbot_Hitscan_Auto_Scope
+					&& !pLocal->IsZoomed() && pLocal->m_iClass() == TF_CLASS_SNIPER && pWeapon->GetSlot() == WEAPON_SLOT_PRIMARY && G::bCanPrimaryAttack)
+				{
+					pCmd->buttons |= IN_ATTACK2;
+					return;
+				}
 			}
 
 			// Auto Shoot
@@ -977,8 +995,8 @@ void CAimbotHitscan::Run(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBase* pWe
 				pCmd->buttons |= IN_ATTACK2;
 			}
 
-			// Update attack state
-			if (ShouldFire(pCmd, pLocal, pWeapon, target))
+			// During rapid fire shifting, skip ShouldFire checks and always fire
+			if (bRapidFireShifting || ShouldFire(pCmd, pLocal, pWeapon, target))
 			{
 				// FakeLag Fix - disable interp for fakelagging target during shot
 				if (CFG::Aimbot_Hitscan_FakeLagFix && target.Entity && target.Entity->GetClassId() == ETFClassIds::CTFPlayer)
@@ -988,19 +1006,21 @@ void CAimbotHitscan::Run(CUserCmd* pCmd, C_TFPlayer* pLocal, C_TFWeaponBase* pWe
 						F::FakeLagFix->OnPreShot(pTarget);
 				}
 
-				HandleFire(pCmd, pWeapon);
+				if (!bRapidFireShifting)
+					HandleFire(pCmd, pWeapon);
 			}
 
-			const bool bIsFiring = IsFiring(pCmd, pWeapon);
+			const bool bIsFiring = bRapidFireShifting ? true : IsFiring(pCmd, pWeapon);
 			G::bFiring = bIsFiring;
 
 			// FakeLag Fix - restore interp after shot
 			if (CFG::Aimbot_Hitscan_FakeLagFix)
 				F::FakeLagFix->OnPostShot();
 
-			// Are we ready to aim?
-			if (ShouldAim(pCmd, pLocal, pWeapon) || bIsFiring)
+			// Are we ready to aim? During rapid fire shifting, always aim
+			if (bRapidFireShifting || ShouldAim(pCmd, pLocal, pWeapon) || bIsFiring)
 			{
+				// During rapid fire shifting, always aim (aimKeyDown is already true)
 				if (aimKeyDown)
 				{
 					Aim(pCmd, pLocal, target.AngleTo);

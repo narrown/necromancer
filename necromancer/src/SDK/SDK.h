@@ -450,6 +450,7 @@ namespace Shifting
 	inline bool bShifting = false;
 	inline bool bRapidFireWantShift = false;
 	inline bool bShiftingWarp = false;
+	inline bool bShiftingRapidFire = false;  // True when shifting for rapid fire (not warp)
 
 	// Saved command state (from Amalgam)
 	inline CUserCmd SavedCmd = {};
@@ -460,6 +461,10 @@ namespace Shifting
 	inline Vec3 vShiftStartPos = {};
 	inline bool bStartedOnGround = false;
 
+	// Target tracking for rapid fire aimbot
+	inline int nRapidFireTargetIndex = -1;
+	inline float flRapidFireSimTime = 0.0f;
+
 	inline void Reset()
 	{
 		nAvailableTicks = 0;
@@ -467,11 +472,15 @@ namespace Shifting
 		bShifting = false;
 		bRapidFireWantShift = false;
 		bShiftingWarp = false;
+		bShiftingRapidFire = false;
 		// Reset saved command state
 		bHasSavedCmd = false;
 		bSavedAngles = false;
 		// Reset shift start tracking
 		bStartedOnGround = false;
+		// Reset rapid fire target tracking
+		nRapidFireTargetIndex = -1;
+		flRapidFireSimTime = 0.0f;
 	}
 }
 

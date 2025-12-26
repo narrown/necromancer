@@ -92,6 +92,9 @@ void CRapidFire::Run(CUserCmd* pCmd, bool* pSendPacket)
 		Shifting::SavedCmd = *pCmd;
 		Shifting::bSavedAngles = G::bSilentAngles || G::bPSilentAngles;
 		Shifting::bHasSavedCmd = true;
+		
+		// Save target info for aimbot during shifted ticks
+		Shifting::nRapidFireTargetIndex = G::nTargetIndex;
 
 		/*if (CFG::Exploits_RapidFire_Antiwarp)
 		{
@@ -128,15 +131,25 @@ bool CRapidFire::ShouldExitCreateMove(CUserCmd* pCmd)
 	if (!pLocal)
 		return false;
 
-	if (Shifting::bShifting && !Shifting::bShiftingWarp)
+	// Only handle rapid fire shifting, not warp shifting
+	if (Shifting::bShiftingRapidFire)
 	{
-		// Restore saved command from Shifting namespace (from Amalgam)
+		// During rapid fire shifting, we want to:
+		// 1. Restore movement from saved command (anti-warp, etc.)
+		// 2. Let aimbot run to recalculate angles for each tick
+		// 3. Set attack button for each shifted tick
+		
 		if (Shifting::bHasSavedCmd)
 		{
-			int iSavedCommandNumber = pCmd->command_number;
-			*pCmd = Shifting::SavedCmd;
-			pCmd->command_number = iSavedCommandNumber;
-
+			// Restore movement but NOT viewangles - aimbot will set those
+			pCmd->forwardmove = Shifting::SavedCmd.forwardmove;
+			pCmd->sidemove = Shifting::SavedCmd.sidemove;
+			pCmd->upmove = Shifting::SavedCmd.upmove;
+			pCmd->buttons = Shifting::SavedCmd.buttons;
+			pCmd->impulse = Shifting::SavedCmd.impulse;
+			pCmd->weaponselect = Shifting::SavedCmd.weaponselect;
+			pCmd->weaponsubtype = Shifting::SavedCmd.weaponsubtype;
+			
 			// Apply anti-warp if enabled and started on ground
 			if (CFG::Exploits_RapidFire_Antiwarp && Shifting::bStartedOnGround)
 			{
@@ -144,10 +157,15 @@ bool CRapidFire::ShouldExitCreateMove(CUserCmd* pCmd)
 				const float flScale = Math::RemapValClamped(flTicks, 14.f, 22.f, 0.605f, 1.f);
 				SDKUtils::WalkTo(pCmd, pLocal->m_vecOrigin(), Shifting::vShiftStartPos, flScale);
 			}
-
-			// Restore silent angles state if it was active when saved
-			if (Shifting::bSavedAngles)
-				G::bSilentAngles = true;
+			
+			// Set attack button for this shifted tick
+			pCmd->buttons |= IN_ATTACK;
+			
+			// Mark that we're firing during rapid fire shift
+			G::bFiring = true;
+			
+			// Restore target index so aimbot knows what to aim at
+			G::nTargetIndex = Shifting::nRapidFireTargetIndex;
 		}
 		else
 		{
@@ -156,25 +174,33 @@ bool CRapidFire::ShouldExitCreateMove(CUserCmd* pCmd)
 
 			if (!m_bSetCommand)
 			{
-				*pCmd = m_ShiftCmd;
+				// Restore movement but NOT viewangles
+				pCmd->forwardmove = m_ShiftCmd.forwardmove;
+				pCmd->sidemove = m_ShiftCmd.sidemove;
+				pCmd->upmove = m_ShiftCmd.upmove;
+				pCmd->buttons = m_ShiftCmd.buttons;
+				pCmd->impulse = m_ShiftCmd.impulse;
+				pCmd->weaponselect = m_ShiftCmd.weaponselect;
+				pCmd->weaponsubtype = m_ShiftCmd.weaponsubtype;
 				m_bSetCommand = true;
 			}
 
 			if (CFG::Exploits_RapidFire_Antiwarp && m_bStartedShiftOnGround)
 			{
-				*pCmd = m_ShiftCmd;
 				const float moveScale = Math::RemapValClamped(static_cast<float>(CFG::Exploits_RapidFire_Ticks), 14.0f, 22.0f, 0.605f, 1.0f);
 				SDKUtils::WalkTo(pCmd, pLocal->m_vecOrigin(), m_vShiftStart, moveScale);
 			}
-			else
-			{
-				const auto pWeapon = H::Entities->GetWeapon();
-				if (IsRapidFireWeapon(pWeapon))
-					*pCmd = m_ShiftCmd;
-			}
+			
+			// Set attack button for this shifted tick
+			pCmd->buttons |= IN_ATTACK;
+			
+			// Mark that we're firing during rapid fire shift
+			G::bFiring = true;
 		}
 
-		return true;
+		// Return false to let aimbot run and recalculate angles for this tick
+		// The aimbot will update viewangles based on current target position
+		return false;
 	}
 
 	return false;

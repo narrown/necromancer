@@ -81,6 +81,7 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 	{
 		Shifting::bRapidFireWantShift = false;
 		Shifting::bShifting = true;
+		Shifting::bShiftingRapidFire = true;  // Mark as rapid fire shifting (not warp)
 
 		// Limit ticks to nMaxTicks (already clamped to 8 when anti-cheat enabled)
 		int nTicks = std::min(CFG::Exploits_RapidFire_Ticks, nMaxTicks);
@@ -93,6 +94,7 @@ MAKE_HOOK(CL_Move, Signatures::CL_Move.Get(), void, __fastcall,
 		}
 
 		Shifting::bShifting = false;
+		Shifting::bShiftingRapidFire = false;
 
 		return;
 	}
