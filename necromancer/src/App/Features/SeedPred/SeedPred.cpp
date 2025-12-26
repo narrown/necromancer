@@ -304,8 +304,12 @@ void CSeedPred::AdjustAngles(CUserCmd* cmd)
 
 		// Reverse the spread: aim where we need to so spread lands on target
 		// If spread pushes bullet to spreadAngles, we need to aim at (2*target - spreadAngles)
-		cmd->viewangles = (cmd->viewangles * 2.0f) - spreadAngles;
-		Math::ClampAngles(cmd->viewangles);
+		Vec3 correctedAngles = (cmd->viewangles * 2.0f) - spreadAngles;
+		Math::ClampAngles(correctedAngles);
+		
+		// Fix movement to match the new angles (important for silent aim)
+		H::AimUtils->FixMovement(cmd, correctedAngles);
+		cmd->viewangles = correctedAngles;
 		G::bSilentAngles = true;
 		return;
 	}
@@ -389,9 +393,12 @@ void CSeedPred::AdjustAngles(CUserCmd* cmd)
 
 	// Apply correction to aim where the best bullet will land on target
 	const Vec3 correction = cmd->viewangles - bestAngles;
-	cmd->viewangles += correction;
-	Math::ClampAngles(cmd->viewangles);
+	Vec3 correctedAngles = cmd->viewangles + correction;
+	Math::ClampAngles(correctedAngles);
 
+	// Fix movement to match the new angles (important for silent aim)
+	H::AimUtils->FixMovement(cmd, correctedAngles);
+	cmd->viewangles = correctedAngles;
 	G::bSilentAngles = true;
 }
 
