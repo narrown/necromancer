@@ -564,6 +564,8 @@ namespace CFG
 	CFGVAR(Misc_ComputeLightingOrigin_Fix, true);
 	CFGVAR(Misc_Equip_Region_Unlock, false);
 	CFGVAR(Misc_Fast_Stop, false);
+	CFGVAR(Misc_Fast_Accelerate, false);
+	CFGVAR(Misc_Duck_Speed, false);
 	CFGVAR(Misc_Auto_Strafe, true);
 	CFGVAR(Misc_Auto_Strafe_Avoid_Walls, false);
 	CFGVAR(Misc_Auto_Strafe_Turn_Scale, 0.40f);

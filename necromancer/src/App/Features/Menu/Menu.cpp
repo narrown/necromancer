@@ -3534,6 +3534,8 @@ void CMenu::MainWindow()
 			CheckBox("Bunnyhop", CFG::Misc_Bunnyhop);
 			CheckBox("Choke on Bunnyhop", CFG::Misc_Choke_On_Bhop);
 			CheckBox("Fast Stop", CFG::Misc_Fast_Stop);
+			CheckBox("Fast Accelerate", CFG::Misc_Fast_Accelerate);
+			CheckBox("Duck Speed", CFG::Misc_Duck_Speed);
 			CheckBox("Crouch While Airborne", CFG::Misc_Crouch_While_Airborne);
 			CheckBox("Auto Strafe", CFG::Misc_Auto_Strafe);
 			if (CFG::Misc_Auto_Strafe) {

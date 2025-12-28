@@ -10,6 +10,7 @@ public:
 	void CrouchWhileAirborne(CUserCmd* pCmd);
 	void NoiseMakerSpam();
 	void FastStop(CUserCmd* pCmd);
+	void FastAccelerate(CUserCmd* pCmd);
 
 	void AutoRocketJump(CUserCmd* cmd);
 	void AutoDisguise(CUserCmd* cmd);

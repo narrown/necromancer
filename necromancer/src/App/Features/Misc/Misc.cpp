@@ -291,6 +291,51 @@ void CMisc::FastStop(CUserCmd* pCmd)
 	}
 }
 
+void CMisc::FastAccelerate(CUserCmd* pCmd)
+{
+	const auto pLocal = H::Entities->GetLocal();
+	if (!pLocal || pLocal->deadflag() || pLocal->GetMoveType() != MOVETYPE_WALK)
+		return;
+
+	if (!(pLocal->m_fFlags() & FL_ONGROUND))
+		return;
+
+	const bool bIsDucking = (pLocal->m_fFlags() & FL_DUCKING) != 0;
+	
+	// Check if the appropriate feature is enabled based on duck state
+	if (bIsDucking ? !CFG::Misc_Duck_Speed : !CFG::Misc_Fast_Accelerate)
+		return;
+
+	// Skip if anti-cheat compatibility is enabled
+	if (CFG::Misc_AntiCheat_Enabled)
+		return;
+
+	// Skip on attack, doubletap, speedhack, recharge, anti-aim, or every other tick
+	if (G::Attacking == 1 || I::GlobalVars->tickcount % 2)
+		return;
+
+	// Only apply when pressing movement keys
+	if (!(pCmd->buttons & (IN_FORWARD | IN_BACK | IN_MOVELEFT | IN_MOVERIGHT)))
+		return;
+
+	const float flSpeed = pLocal->m_vecVelocity().Length2D();
+	const float flMaxSpeed = std::min(pLocal->m_flMaxspeed() * 0.9f, 520.0f) - 10.0f;
+
+	// Only apply when below max speed (accelerating)
+	if (flSpeed >= flMaxSpeed)
+		return;
+
+	Vec3 vMove = { pCmd->forwardmove, pCmd->sidemove, 0.0f };
+	Vec3 vAngMoveReverse;
+	Math::VectorAngles(vMove * -1.0f, vAngMoveReverse);
+	
+	pCmd->forwardmove = -vMove.Length();
+	pCmd->sidemove = 0.0f;
+	pCmd->viewangles.y = fmodf(pCmd->viewangles.y - vAngMoveReverse.y, 360.0f);
+	pCmd->viewangles.z = 270.0f;
+	G::bPSilentAngles = true;
+}
+
 bool CMisc::SetRocketJumpAngles(C_TFPlayer* pLocal, C_TFWeaponBase* pWeapon, CUserCmd* pCmd)
 {
 	m_vRJAngles = pCmd->viewangles;
