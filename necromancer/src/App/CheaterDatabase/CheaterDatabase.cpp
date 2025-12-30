@@ -2,24 +2,45 @@
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+#include <functional>
 
+// ==================== Worker Thread Infrastructure ====================
+
+enum class TaskType { FetchSourcebans, FetchVerobay };
+
+struct WorkerTask_t
+{
+	TaskType type;
+	std::vector<uint64_t> steamIDs; // For sourcebans batch
+};
+
+static std::queue<WorkerTask_t> g_taskQueue;
+static std::mutex g_mtxTaskQueue;
+static std::condition_variable g_cvTaskQueue;
+static std::atomic<bool> g_bWorkerRunning{ false };
+static std::thread g_workerThread;
+
+// Persistent HTTP session (reused across requests)
+static HINTERNET g_hSession = nullptr;
+
+// Sourcebans data
 static std::map<uint64_t, SourcebanInfo_t> g_mapSourcebans;
 static std::mutex g_mtxSourcebans;
-static std::set<uint64_t> g_setCheckedPlayers; // Track which players we've already queued for checking
-static bool g_bWasConnected = false; // Track connection state to detect new game joins
+static std::set<uint64_t> g_setCheckedPlayers;
+static bool g_bWasConnected = false;
 
-// Verobay database (Tom's reported_ids.txt)
+// Verobay database
 static std::set<uint64_t> g_setVerobayDatabase;
-static std::map<uint64_t, VerobayInfo_t> g_mapVerobayInfo; // Per-player info for UI
+static std::map<uint64_t, VerobayInfo_t> g_mapVerobayInfo;
 static std::mutex g_mtxVerobay;
-static bool g_bVerobayFetched = false;
-static bool g_bVerobayFetching = false;
+static std::atomic<bool> g_bVerobayFetched{ false };
+static std::atomic<bool> g_bVerobayFetching{ false };
 
-// Pending chat alerts to be processed on main thread
+// Pending chat alerts
 static std::vector<PendingBanAlert_t> g_vecPendingBanAlerts;
 static std::mutex g_mtxPendingAlerts;
 
-// Cheat-related keywords to filter ban alerts
+// Cheat keywords for filtering
 static const std::vector<std::string> g_vecCheatKeywords = {
 	"hacking", "account", "ip", "cheats", "cheat", "cheating", "convar", "hack", "hacks",
 	"aimbot", "triggerbot", "bunnyhop", "dupe", "duplicate", "smac", "silent", "smooth",
@@ -27,10 +48,13 @@ static const std::vector<std::string> g_vecCheatKeywords = {
 	"exploit", "crit", "angle", "groupban"
 };
 
-// Helper function to check if a ban reason contains any cheat-related keyword (case-insensitive)
+// Chrome User-Agent for HTTP requests
+static const wchar_t* g_wszUserAgent = L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+// ==================== Helper Functions ====================
+
 static bool ContainsCheatKeyword(const std::string& banReason)
 {
-	// Convert ban reason to lowercase for case-insensitive comparison
 	std::string lowerReason = banReason;
 	std::transform(lowerReason.begin(), lowerReason.end(), lowerReason.begin(),
 		[](unsigned char c) { return std::tolower(c); });
@@ -43,7 +67,6 @@ static bool ContainsCheatKeyword(const std::string& banReason)
 	return false;
 }
 
-// Helper function to count bans with cheat-related keywords
 static int CountCheatRelatedBans(const std::vector<std::string>& bans)
 {
 	int count = 0;
@@ -55,24 +78,302 @@ static int CountCheatRelatedBans(const std::vector<std::string>& bans)
 	return count;
 }
 
-// Process pending ban alerts on main thread (call from Paint hook or similar)
-void ProcessPendingBanAlerts()
+
+// ==================== HTTP Helper ====================
+
+static std::string HttpGet(const wchar_t* host, const wchar_t* path)
 {
-	std::lock_guard<std::mutex> lock(g_mtxPendingAlerts);
-	if (g_vecPendingBanAlerts.empty())
+	std::string response;
+	
+	if (!g_hSession)
+		return response;
+
+	HINTERNET hConnect = WinHttpConnect(g_hSession, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
+	if (!hConnect)
+		return response;
+
+	HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+	if (hRequest)
+	{
+		if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
+		{
+			if (WinHttpReceiveResponse(hRequest, NULL))
+			{
+				DWORD dwSize = 0;
+				DWORD dwDownloaded = 0;
+
+				do
+				{
+					dwSize = 0;
+					WinHttpQueryDataAvailable(hRequest, &dwSize);
+					if (dwSize > 0)
+					{
+						std::vector<char> buffer(dwSize + 1, 0);
+						WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded);
+						response.append(buffer.data(), dwDownloaded);
+					}
+				} while (dwSize > 0);
+			}
+		}
+		WinHttpCloseHandle(hRequest);
+	}
+	WinHttpCloseHandle(hConnect);
+	
+	return response;
+}
+
+// ==================== Task Processors ====================
+
+static void ProcessSourcebansFetch(const std::vector<uint64_t>& steamIDs)
+{
+	if (steamIDs.empty())
 		return;
 
-	// Wait until local player exists and has chosen a class
+	// Build comma-separated list (max 100 per API call)
+	std::wstring steamIdList;
+	for (size_t i = 0; i < steamIDs.size() && i < 100; i++)
+	{
+		if (i > 0) steamIdList += L",";
+		wchar_t buf[32];
+		swprintf_s(buf, L"%llu", steamIDs[i]);
+		steamIdList += buf;
+	}
+
+	std::wstring path = L"/api/sourcebans?key=ebef9bef3d940cb190b5328697524103&shouldkey=1&steamids=" + steamIdList;
+	std::string response = HttpGet(L"steamhistory.net", path.c_str());
+
+	// Initialize all as fetched
+	{
+		std::lock_guard<std::mutex> lock(g_mtxSourcebans);
+		for (uint64_t id : steamIDs)
+		{
+			g_mapSourcebans[id].m_bFetched = true;
+			g_mapSourcebans[id].m_bFetching = false;
+		}
+	}
+
+	if (response.empty())
+		return;
+
+	// Parse JSON response
+	try
+	{
+		auto json = nlohmann::json::parse(response);
+		if (!json.contains("response"))
+			return;
+
+		const auto& resp = json["response"];
+		
+		std::lock_guard<std::mutex> lock(g_mtxSourcebans);
+		
+		if (resp.is_object())
+		{
+			for (auto& [steamIdStr, bans] : resp.items())
+			{
+				uint64_t steamId = std::stoull(steamIdStr);
+				
+				if (bans.is_array())
+				{
+					for (const auto& ban : bans)
+					{
+						g_mapSourcebans[steamId].m_bHasBans = true;
+						
+						std::string server = ban.value("Server", "Unknown");
+						std::string reason = ban.value("BanReason", "No reason");
+						std::string state = ban.value("CurrentState", "Unknown");
+
+						g_mapSourcebans[steamId].m_vecBans.push_back(server + ": " + reason + " (" + state + ")");
+					}
+				}
+			}
+		}
+		else if (resp.is_array())
+		{
+			for (const auto& ban : resp)
+			{
+				if (!ban.contains("SteamID") || ban["SteamID"].is_null())
+					continue;
+					
+				uint64_t steamId = std::stoull(ban["SteamID"].get<std::string>());
+				g_mapSourcebans[steamId].m_bHasBans = true;
+				
+				std::string server = ban.value("Server", "Unknown");
+				std::string reason = ban.value("BanReason", "No reason");
+				std::string state = ban.value("CurrentState", "Unknown");
+
+				g_mapSourcebans[steamId].m_vecBans.push_back(server + ": " + reason + " (" + state + ")");
+			}
+		}
+	}
+	catch (...) { return; }
+
+	// Queue chat alerts
+	if (!CFG::Visuals_Chat_Ban_Alerts)
+		return;
+
+	std::lock_guard<std::mutex> lockSb(g_mtxSourcebans);
+	
+	for (uint64_t id : steamIDs)
+	{
+		bool bVerobayFound = IsInVerobayDatabase(id);
+		int cheatBanCount = 0;
+		
+		if (g_mapSourcebans[id].m_bHasBans && !g_mapSourcebans[id].m_bAlertDismissed)
+			cheatBanCount = CountCheatRelatedBans(g_mapSourcebans[id].m_vecBans);
+		
+		if (bVerobayFound)
+			cheatBanCount++;
+		
+		if (cheatBanCount == 0)
+			continue;
+		
+		// Find player name
+		std::string playerName = "Unknown";
+		for (int n = 1; n <= I::EngineClient->GetMaxClients(); n++)
+		{
+			player_info_t pi{};
+			if (I::EngineClient->GetPlayerInfo(n, &pi) && !pi.fakeplayer)
+			{
+				uint64_t playerSteamID = static_cast<uint64_t>(pi.friendsID) + 0x0110000100000000ULL;
+				if (playerSteamID == id)
+				{
+					playerName = pi.name;
+					break;
+				}
+			}
+		}
+		
+		std::lock_guard<std::mutex> alertLock(g_mtxPendingAlerts);
+		g_vecPendingBanAlerts.push_back({ playerName, cheatBanCount, id, bVerobayFound });
+	}
+}
+
+
+static void ProcessVerobayFetch()
+{
+	std::string response = HttpGet(L"raw.githubusercontent.com", L"/AveraFox/Tom/main/reported_ids.txt");
+	
+	if (response.empty())
+	{
+		g_bVerobayFetching = false;
+		return;
+	}
+
+	std::set<uint64_t> newDatabase;
+	std::istringstream stream(response);
+	std::string line;
+
+	while (std::getline(stream, line))
+	{
+		line.erase(0, line.find_first_not_of(" \t\r\n"));
+		line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+		if (line.empty())
+			continue;
+
+		try
+		{
+			newDatabase.insert(std::stoull(line));
+		}
+		catch (...) {}
+	}
+
+	{
+		std::lock_guard<std::mutex> lock(g_mtxVerobay);
+		g_setVerobayDatabase = std::move(newDatabase);
+	}
+	
+	g_bVerobayFetched = true;
+	g_bVerobayFetching = false;
+}
+
+// ==================== Worker Thread ====================
+
+static void WorkerThreadFunc()
+{
+	while (g_bWorkerRunning)
+	{
+		WorkerTask_t task;
+		
+		{
+			std::unique_lock<std::mutex> lock(g_mtxTaskQueue);
+			g_cvTaskQueue.wait(lock, [] { return !g_taskQueue.empty() || !g_bWorkerRunning; });
+			
+			if (!g_bWorkerRunning)
+				break;
+			
+			task = std::move(g_taskQueue.front());
+			g_taskQueue.pop();
+		}
+
+		switch (task.type)
+		{
+		case TaskType::FetchSourcebans:
+			ProcessSourcebansFetch(task.steamIDs);
+			break;
+		case TaskType::FetchVerobay:
+			ProcessVerobayFetch();
+			break;
+		}
+	}
+}
+
+// ==================== Public API ====================
+
+void InitCheaterDatabase()
+{
+	if (g_bWorkerRunning)
+		return;
+
+	g_hSession = WinHttpOpen(g_wszUserAgent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	
+	g_bWorkerRunning = true;
+	g_workerThread = std::thread(WorkerThreadFunc);
+}
+
+void ShutdownCheaterDatabase()
+{
+	if (!g_bWorkerRunning)
+		return;
+
+	g_bWorkerRunning = false;
+	g_cvTaskQueue.notify_all();
+	
+	if (g_workerThread.joinable())
+		g_workerThread.join();
+
+	if (g_hSession)
+	{
+		WinHttpCloseHandle(g_hSession);
+		g_hSession = nullptr;
+	}
+}
+
+void ProcessPendingBanAlerts()
+{
+	std::vector<PendingBanAlert_t> alerts;
+	{
+		std::lock_guard<std::mutex> lock(g_mtxPendingAlerts);
+		if (g_vecPendingBanAlerts.empty())
+			return;
+		alerts = std::move(g_vecPendingBanAlerts);
+		g_vecPendingBanAlerts.clear();
+	}
+
 	const auto pLocal = H::Entities->GetLocal();
 	if (!pLocal || pLocal->m_iClass() == TF_CLASS_UNDEFINED)
+	{
+		// Put alerts back if we can't process them yet
+		std::lock_guard<std::mutex> lock(g_mtxPendingAlerts);
+		g_vecPendingBanAlerts.insert(g_vecPendingBanAlerts.end(), alerts.begin(), alerts.end());
 		return;
+	}
 
 	int nLocalTeam = pLocal->m_iTeamNum();
 	auto pResource = GetTFPlayerResource();
 
-	for (const auto& alert : g_vecPendingBanAlerts)
+	for (const auto& alert : alerts)
 	{
-		// Find player's team
 		bool bIsTeammate = false;
 		for (int n = 1; n <= I::EngineClient->GetMaxClients(); n++)
 		{
@@ -89,33 +390,22 @@ void ProcessPendingBanAlerts()
 			}
 		}
 
-		// Color based on ban count: yellow (1-2), orange (3+), RED if found in Verobay database
-		Color_t banColor;
-		if (alert.bVerobayFound)
-			banColor = { 255, 50, 50, 255 }; // RED - found in Verobay database
-		else
-			banColor = (alert.banCount <= 2) ? Color_t{ 255, 255, 0, 255 } : Color_t{ 255, 165, 0, 255 };
-		
-		Color_t alertColor = { 255, 50, 50, 255 }; // Red for ALERT!
+		Color_t banColor = alert.bVerobayFound ? Color_t{ 255, 50, 50, 255 } 
+			: (alert.banCount <= 2) ? Color_t{ 255, 255, 0, 255 } : Color_t{ 255, 165, 0, 255 };
+		Color_t alertColor = { 255, 50, 50, 255 };
 		Color_t nameColor = bIsTeammate ? CFG::Color_Teammate : CFG::Color_Enemy;
 		Color_t teamColor = bIsTeammate ? CFG::Color_Teammate : CFG::Color_Enemy;
 		const char* teamStr = bIsTeammate ? "Teammate" : "Enemy";
 
 		I::ClientModeShared->m_pChatElement->ChatPrintf(0,
 			std::format("\x1PLAYER [\x8{}{}\x1] HAS \x8{}{} BANS \x8{}ALERT! \x8{}({})",
-				nameColor.toHexStr(),
-				alert.playerName,
-				banColor.toHexStr(),
-				alert.banCount,
+				nameColor.toHexStr(), alert.playerName,
+				banColor.toHexStr(), alert.banCount,
 				alertColor.toHexStr(),
-				teamColor.toHexStr(),
-				teamStr).c_str());
+				teamColor.toHexStr(), teamStr).c_str());
 	}
-	g_vecPendingBanAlerts.clear();
 }
 
-
-// Dismiss alert for a player (called when viewing their profile)
 void DismissSourcebansAlert(uint64_t steamID64)
 {
 	std::lock_guard<std::mutex> lock(g_mtxSourcebans);
@@ -123,13 +413,13 @@ void DismissSourcebansAlert(uint64_t steamID64)
 		g_mapSourcebans[steamID64].m_bAlertDismissed = true;
 }
 
-// Async function to fetch sourcebans for multiple players (batch)
+
 void FetchSourcebansBatch(const std::vector<uint64_t>& steamIDs)
 {
 	if (steamIDs.empty())
 		return;
 
-	// Mark all as fetching
+	// Mark as fetching
 	{
 		std::lock_guard<std::mutex> lock(g_mtxSourcebans);
 		for (uint64_t id : steamIDs)
@@ -139,208 +429,28 @@ void FetchSourcebansBatch(const std::vector<uint64_t>& steamIDs)
 		}
 	}
 
-	std::thread([steamIDs]()
+	// Queue task for worker thread
 	{
-		// Build comma-separated list of Steam IDs (max 100 per API call)
-		std::wstring steamIdList;
-		for (size_t i = 0; i < steamIDs.size() && i < 100; i++)
-		{
-			if (i > 0) steamIdList += L",";
-			wchar_t buf[32];
-			swprintf_s(buf, L"%llu", steamIDs[i]);
-			steamIdList += buf;
-		}
-
-		HINTERNET hSession = WinHttpOpen(L"Necromancer/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-		if (hSession)
-		{
-			HINTERNET hConnect = WinHttpConnect(hSession, L"steamhistory.net", INTERNET_DEFAULT_HTTPS_PORT, 0);
-			if (hConnect)
-			{
-				std::wstring path = L"/api/sourcebans?key=ebef9bef3d940cb190b5328697524103&shouldkey=1&steamids=" + steamIdList; //dummy account generated this key
-
-				HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", path.c_str(), NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-				if (hRequest)
-				{
-					if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
-					{
-						if (WinHttpReceiveResponse(hRequest, NULL))
-						{
-							std::string response;
-							DWORD dwSize = 0;
-							DWORD dwDownloaded = 0;
-
-							do
-							{
-								dwSize = 0;
-								WinHttpQueryDataAvailable(hRequest, &dwSize);
-								if (dwSize > 0)
-								{
-									std::vector<char> buffer(dwSize + 1, 0);
-									WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded);
-									response.append(buffer.data(), dwDownloaded);
-								}
-							} while (dwSize > 0);
-
-							// Initialize all as fetched with no bans
-							std::lock_guard<std::mutex> lock(g_mtxSourcebans);
-							for (uint64_t id : steamIDs)
-							{
-								g_mapSourcebans[id].m_bFetched = true;
-								g_mapSourcebans[id].m_bFetching = false;
-							}
-
-							// Parse JSON response (with shouldkey=1, response is keyed by SteamID)
-							try
-							{
-								auto json = nlohmann::json::parse(response);
-								if (json.contains("response"))
-								{
-									const auto& resp = json["response"];
-									
-									// If it's an object (keyed by SteamID)
-									if (resp.is_object())
-									{
-										for (auto& [steamIdStr, bans] : resp.items())
-										{
-											uint64_t steamId = std::stoull(steamIdStr);
-											
-											if (bans.is_array())
-											{
-												for (const auto& ban : bans)
-												{
-													g_mapSourcebans[steamId].m_bHasBans = true;
-													std::string banStr;
-													
-													std::string server = "Unknown";
-													std::string reason = "No reason";
-													std::string state = "Unknown";
-													
-													if (ban.contains("Server") && !ban["Server"].is_null())
-														server = ban["Server"].get<std::string>();
-													if (ban.contains("BanReason") && !ban["BanReason"].is_null())
-														reason = ban["BanReason"].get<std::string>();
-													if (ban.contains("CurrentState") && !ban["CurrentState"].is_null())
-														state = ban["CurrentState"].get<std::string>();
-
-													banStr = server + ": " + reason + " (" + state + ")";
-													g_mapSourcebans[steamId].m_vecBans.push_back(banStr);
-												}
-											}
-										}
-									}
-									// If it's an array (old format without shouldkey)
-									else if (resp.is_array())
-									{
-										for (const auto& ban : resp)
-										{
-											if (ban.contains("SteamID") && !ban["SteamID"].is_null())
-											{
-												uint64_t steamId = std::stoull(ban["SteamID"].get<std::string>());
-												g_mapSourcebans[steamId].m_bHasBans = true;
-												
-												std::string banStr;
-												std::string server = "Unknown";
-												std::string reason = "No reason";
-												std::string state = "Unknown";
-												
-												if (ban.contains("Server") && !ban["Server"].is_null())
-													server = ban["Server"].get<std::string>();
-												if (ban.contains("BanReason") && !ban["BanReason"].is_null())
-													reason = ban["BanReason"].get<std::string>();
-												if (ban.contains("CurrentState") && !ban["CurrentState"].is_null())
-													state = ban["CurrentState"].get<std::string>();
-
-												banStr = server + ": " + reason + " (" + state + ")";
-												g_mapSourcebans[steamId].m_vecBans.push_back(banStr);
-											}
-										}
-									}
-								}
-
-								// Queue chat alerts for players with cheat-related bans or in Verobay database (will be processed on main thread)
-								if (CFG::Visuals_Chat_Ban_Alerts)
-								{
-									for (uint64_t id : steamIDs)
-									{
-										// Check if player is in Verobay database
-										bool bVerobayFound = IsInVerobayDatabase(id);
-										
-										// Count cheat-related bans
-										int cheatBanCount = 0;
-										bool bHasSourcebans = g_mapSourcebans[id].m_bHasBans && !g_mapSourcebans[id].m_bAlertDismissed;
-										
-										if (bHasSourcebans)
-											cheatBanCount = CountCheatRelatedBans(g_mapSourcebans[id].m_vecBans);
-										
-										// Add +1 to ban count if found in Verobay
-										if (bVerobayFound)
-											cheatBanCount++;
-										
-										// Skip if no cheat-related bans AND not in Verobay
-										if (cheatBanCount == 0)
-											continue;
-										
-										// Find player name from entity list
-										std::string playerName = "Unknown";
-										for (int n = 1; n <= I::EngineClient->GetMaxClients(); n++)
-										{
-											player_info_t pi{};
-											if (I::EngineClient->GetPlayerInfo(n, &pi) && !pi.fakeplayer)
-											{
-												uint64_t playerSteamID = static_cast<uint64_t>(pi.friendsID) + 0x0110000100000000ULL;
-												if (playerSteamID == id)
-												{
-													playerName = pi.name;
-													break;
-												}
-											}
-										}
-										
-										// Queue alert for main thread (use cheat-related ban count, flag if Verobay found)
-										{
-											std::lock_guard<std::mutex> alertLock(g_mtxPendingAlerts);
-											g_vecPendingBanAlerts.push_back({ playerName, cheatBanCount, id, bVerobayFound });
-										}
-									}
-								}
-							}
-							catch (const std::exception& e)
-							{
-								(void)e; // Suppress unused variable warning
-							}
-						}
-					}
-					WinHttpCloseHandle(hRequest);
-				}
-				WinHttpCloseHandle(hConnect);
-			}
-			WinHttpCloseHandle(hSession);
-		}
-	}).detach();
+		std::lock_guard<std::mutex> lock(g_mtxTaskQueue);
+		g_taskQueue.push({ TaskType::FetchSourcebans, steamIDs });
+	}
+	g_cvTaskQueue.notify_one();
 }
 
-
-// Single player fetch (for manual refresh)
 void FetchSourcebans(uint64_t steamID64)
 {
 	FetchSourcebansBatch({ steamID64 });
 }
 
-// Check all players in the server (checks new players automatically)
 void CheckAllPlayersSourcebans()
 {
 	if (!I::EngineClient->IsConnected())
 	{
-		// Reset when disconnected so we check again on next connect
 		if (g_bWasConnected)
 		{
 			g_bWasConnected = false;
 			std::lock_guard<std::mutex> lock(g_mtxSourcebans);
 			g_setCheckedPlayers.clear();
-			// Don't clear g_mapSourcebans - keep the cache for players we've seen before
-			
-			// Clear current session for player stats
 			F::Players->ClearCurrentSession();
 		}
 		return;
@@ -348,11 +458,8 @@ void CheckAllPlayersSourcebans()
 
 	g_bWasConnected = true;
 
-	// Fetch Verobay database if not loaded yet
 	if (!IsVerobayDatabaseLoaded())
-	{
 		FetchVerobayDatabase();
-	}
 
 	std::vector<uint64_t> steamIDsToCheck;
 
@@ -370,35 +477,28 @@ void CheckAllPlayersSourcebans()
 
 		uint64_t steamID64 = static_cast<uint64_t>(player_info.friendsID) + 0x0110000100000000ULL;
 
-		// Skip if already checked or currently checking
 		{
 			std::lock_guard<std::mutex> lock(g_mtxSourcebans);
 			if (g_setCheckedPlayers.count(steamID64) > 0)
 				continue;
 			if (g_mapSourcebans[steamID64].m_bFetched || g_mapSourcebans[steamID64].m_bFetching)
 			{
-				g_setCheckedPlayers.insert(steamID64); // Mark as checked if already in cache
+				g_setCheckedPlayers.insert(steamID64);
 				continue;
 			}
 			g_setCheckedPlayers.insert(steamID64);
 		}
 
-		// Record encounter for this player (first time seeing them this session)
 		F::Players->RecordEncounter(steamID64);
-
 		steamIDsToCheck.push_back(steamID64);
 	}
 
 	if (!steamIDsToCheck.empty())
-	{
 		FetchSourcebansBatch(steamIDsToCheck);
-	}
 }
 
-// Helper to check if a player has sourcebans alert (not dismissed) or is in Vorobey database
 bool HasSourcebansAlert(uint64_t steamID64)
 {
-	// Check sourcebans first
 	{
 		std::lock_guard<std::mutex> lock(g_mtxSourcebans);
 		auto it = g_mapSourcebans.find(steamID64);
@@ -406,7 +506,6 @@ bool HasSourcebansAlert(uint64_t steamID64)
 			return true;
 	}
 	
-	// Also check Vorobey database
 	VerobayInfo_t verobayInfo;
 	if (GetVerobayInfo(steamID64, verobayInfo))
 	{
@@ -417,7 +516,6 @@ bool HasSourcebansAlert(uint64_t steamID64)
 	return false;
 }
 
-// Get sourcebans info for a player (for UI display)
 bool GetSourcebansInfo(uint64_t steamID64, SourcebanInfo_t& out)
 {
 	std::lock_guard<std::mutex> lock(g_mtxSourcebans);
@@ -430,7 +528,6 @@ bool GetSourcebansInfo(uint64_t steamID64, SourcebanInfo_t& out)
 	return false;
 }
 
-// Clear sourcebans cache for a player (for refresh)
 void ClearSourcebansCache(uint64_t steamID64)
 {
 	std::lock_guard<std::mutex> lock(g_mtxSourcebans);
@@ -439,116 +536,22 @@ void ClearSourcebansCache(uint64_t steamID64)
 
 // ==================== Verobay Database ====================
 
-// Fetch the Verobay database (Tom's reported_ids.txt from GitHub)
 void FetchVerobayDatabase()
 {
-	{
-		std::lock_guard<std::mutex> lock(g_mtxVerobay);
-		if (g_bVerobayFetching)
-			return; // Already fetching
-		g_bVerobayFetching = true;
-	}
+	if (g_bVerobayFetching.exchange(true))
+		return; // Already fetching
 
-	std::thread([]()
-	{
-		HINTERNET hSession = WinHttpOpen(L"Necromancer/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-		if (hSession)
-		{
-			HINTERNET hConnect = WinHttpConnect(hSession, L"raw.githubusercontent.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
-			if (hConnect)
-			{
-				HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/AveraFox/Tom/main/reported_ids.txt", NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
-				if (hRequest)
-				{
-					if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
-					{
-						if (WinHttpReceiveResponse(hRequest, NULL))
-						{
-							std::string response;
-							DWORD dwSize = 0;
-							DWORD dwDownloaded = 0;
-
-							do
-							{
-								dwSize = 0;
-								WinHttpQueryDataAvailable(hRequest, &dwSize);
-								if (dwSize > 0)
-								{
-									std::vector<char> buffer(dwSize + 1, 0);
-									WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded);
-									response.append(buffer.data(), dwDownloaded);
-								}
-							} while (dwSize > 0);
-
-							// Parse the response - each line is a Steam64 ID
-							std::set<uint64_t> newDatabase;
-							std::istringstream stream(response);
-							std::string line;
-							int nParsed = 0;
-							int nFailed = 0;
-
-							while (std::getline(stream, line))
-							{
-								// Trim whitespace
-								line.erase(0, line.find_first_not_of(" \t\r\n"));
-								line.erase(line.find_last_not_of(" \t\r\n") + 1);
-
-								if (line.empty())
-									continue;
-
-								try
-								{
-									uint64_t steamID64 = std::stoull(line);
-									newDatabase.insert(steamID64);
-									nParsed++;
-								}
-								catch (...)
-								{
-									nFailed++;
-								}
-							}
-
-							// Update the database
-							{
-								std::lock_guard<std::mutex> lock(g_mtxVerobay);
-								g_setVerobayDatabase = std::move(newDatabase);
-								g_bVerobayFetched = true;
-								g_bVerobayFetching = false;
-							}
-						}
-						else
-						{
-							std::lock_guard<std::mutex> lock(g_mtxVerobay);
-							g_bVerobayFetching = false;
-						}
-					}
-					else
-					{
-						std::lock_guard<std::mutex> lock(g_mtxVerobay);
-						g_bVerobayFetching = false;
-					}
-					WinHttpCloseHandle(hRequest);
-				}
-				WinHttpCloseHandle(hConnect);
-			}
-			WinHttpCloseHandle(hSession);
-		}
-		else
-		{
-			std::lock_guard<std::mutex> lock(g_mtxVerobay);
-			g_bVerobayFetching = false;
-		}
-	}).detach();
+	std::lock_guard<std::mutex> lock(g_mtxTaskQueue);
+	g_taskQueue.push({ TaskType::FetchVerobay, {} });
+	g_cvTaskQueue.notify_one();
 }
 
-// Check if a player is in the Verobay database
 bool IsInVerobayDatabase(uint64_t steamID64)
 {
 	std::lock_guard<std::mutex> lock(g_mtxVerobay);
 	return g_setVerobayDatabase.count(steamID64) > 0;
 }
 
-// Get Verobay info for a player (for UI display)
 bool GetVerobayInfo(uint64_t steamID64, VerobayInfo_t& out)
 {
 	std::lock_guard<std::mutex> lock(g_mtxVerobay);
@@ -556,35 +559,27 @@ bool GetVerobayInfo(uint64_t steamID64, VerobayInfo_t& out)
 	out.m_bFetching = g_bVerobayFetching;
 	out.m_bFoundInDatabase = g_setVerobayDatabase.count(steamID64) > 0;
 	
-	// Check if we have per-player alert dismissed state
 	auto it = g_mapVerobayInfo.find(steamID64);
-	if (it != g_mapVerobayInfo.end())
-		out.m_bAlertDismissed = it->second.m_bAlertDismissed;
-	else
-		out.m_bAlertDismissed = false;
+	out.m_bAlertDismissed = (it != g_mapVerobayInfo.end()) ? it->second.m_bAlertDismissed : false;
 	
 	return g_bVerobayFetched;
 }
 
-// Check if Verobay database has been loaded
 bool IsVerobayDatabaseLoaded()
 {
-	std::lock_guard<std::mutex> lock(g_mtxVerobay);
 	return g_bVerobayFetched;
 }
 
-// Refresh Verobay database
 void RefreshVerobayDatabase()
 {
 	{
 		std::lock_guard<std::mutex> lock(g_mtxVerobay);
-		g_bVerobayFetched = false;
 		g_setVerobayDatabase.clear();
 	}
+	g_bVerobayFetched = false;
 	FetchVerobayDatabase();
 }
 
-// Dismiss Verobay alert for a player (called when viewing their profile)
 void DismissVerobayAlert(uint64_t steamID64)
 {
 	std::lock_guard<std::mutex> lock(g_mtxVerobay);

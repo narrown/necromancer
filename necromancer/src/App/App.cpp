@@ -9,6 +9,7 @@
 #include "Features/Menu/Menu.h"
 #include "Features/Players/Players.h"
 #include "Features/Weather/Weather.h"
+#include "CheaterDatabase/CheaterDatabase.h"
 
 #include "Features/CFG.h"
 
@@ -116,6 +117,9 @@ void CApp::Start()
 	F::Players->Parse();
 	F::Players->ImportLegacyPlayers(); // Auto-import players.json from old seonwdde folder
 
+	// Initialize cheater database worker thread
+	InitCheaterDatabase();
+
 	// Capture user's original game settings
 	// This sets the CFG values to match the user's current game settings
 	CaptureOriginalGameSettings();
@@ -183,6 +187,9 @@ void CApp::Shutdown()
 {
 	if (!bUnload)
 	{
+		// Shutdown cheater database worker thread
+		ShutdownCheaterDatabase();
+
 		// Disable weather before unloading
 		CFG::Visuals_Weather = 0;
 		F::Weather->Rain();

@@ -9,6 +9,9 @@
 #include <thread>
 #include <mutex>
 #include <set>
+#include <queue>
+#include <condition_variable>
+#include <atomic>
 
 #pragma comment(lib, "winhttp.lib")
 
@@ -18,8 +21,8 @@ struct SourcebanInfo_t
 	bool m_bFetched = false;
 	bool m_bFetching = false;
 	bool m_bHasBans = false;
-	bool m_bAlertDismissed = false; // Alert dismissed when user views profile
-	std::vector<std::string> m_vecBans; // "Server: Reason (State)"
+	bool m_bAlertDismissed = false;
+	std::vector<std::string> m_vecBans;
 };
 
 // Verobay database info structure
@@ -36,23 +39,29 @@ struct PendingBanAlert_t
 {
 	std::string playerName;
 	int banCount;
-	uint64_t steamID64; // To look up team at display time
-	bool bVerobayFound; // If found in Verobay database, force red color
+	uint64_t steamID64;
+	bool bVerobayFound;
 };
 
-// Process pending ban alerts on main thread (call from Paint hook or similar)
+// Initialize the worker thread (call once at startup)
+void InitCheaterDatabase();
+
+// Shutdown the worker thread (call at cleanup)
+void ShutdownCheaterDatabase();
+
+// Process pending ban alerts on main thread (call from Paint hook)
 void ProcessPendingBanAlerts();
 
-// Dismiss alert for a player (called when viewing their profile)
+// Dismiss alert for a player
 void DismissSourcebansAlert(uint64_t steamID64);
 
-// Async function to fetch sourcebans for multiple players (batch)
+// Queue sourcebans fetch for multiple players (batch)
 void FetchSourcebansBatch(const std::vector<uint64_t>& steamIDs);
 
 // Single player fetch (for manual refresh)
 void FetchSourcebans(uint64_t steamID64);
 
-// Check all players in the server (checks new players automatically)
+// Check all players in the server
 void CheckAllPlayersSourcebans();
 
 // Helper to check if a player has sourcebans alert (not dismissed)
@@ -66,7 +75,7 @@ void ClearSourcebansCache(uint64_t steamID64);
 
 // ==================== Verobay Database ====================
 
-// Fetch the Verobay database (Tom's reported_ids.txt)
+// Queue Verobay database fetch
 void FetchVerobayDatabase();
 
 // Check if a player is in the Verobay database
@@ -81,5 +90,5 @@ bool IsVerobayDatabaseLoaded();
 // Refresh Verobay database
 void RefreshVerobayDatabase();
 
-// Dismiss Verobay alert for a player (called when viewing their profile)
+// Dismiss Verobay alert for a player
 void DismissVerobayAlert(uint64_t steamID64);
