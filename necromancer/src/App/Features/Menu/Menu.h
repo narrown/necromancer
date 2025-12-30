@@ -111,6 +111,12 @@ private:
 public:
 	void Run();
 	CMenu();
+
+private:
+	std::unordered_map<Color_t*, bool> m_mapContextMenuStates;
+	Color_t m_copiedColor = { 255, 255, 255, 255 };
+
+	std::unordered_map<uint32, bool> m_mapPlayerContextMenuStates;
 };
 
 MAKE_SINGLETON_SCOPED(CMenu, Menu, F);

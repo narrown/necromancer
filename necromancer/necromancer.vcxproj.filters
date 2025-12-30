@@ -63,7 +63,7 @@
     <ClCompile Include="include\MinHook\trampoline.c" />
     <ClCompile Include="src\App\Features\Triggerbot\AutoVaccinator\AutoVaccinator.cpp" />
     <ClCompile Include="src\Utils\Storage\Storage.cpp" />
-    <ClCompile Include="src\App\Hooks\ClientModeShared_CreateMove.cpp" />
+    <ClCompile Include="src\App\Hooks\CHLClient_CreateMove.cpp" />
     <ClCompile Include="src\App\Hooks\CBaseAnimating_SetupBones.cpp" />
     <ClCompile Include="src\App\Hooks\CBaseEntity_InterpolateServerEntities.cpp" />
     <ClCompile Include="src\App\Hooks\CBaseEntity_ResetLatched.cpp" />
